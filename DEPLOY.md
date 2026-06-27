@@ -37,6 +37,35 @@ La CLI affiche l'URL publique, du type `https://TON-PROJET.web.app`.
 Ouvre-la, puis utilise le bouton **« Installer l'app »** (en-tête) ou
 le menu du navigateur pour l'ajouter à l'écran d'accueil.
 
+## Déploiement automatique (GitHub Actions)
+
+Le workflow `.github/workflows/firebase-hosting.yml` redéploie le site **à chaque
+push sur `main`**. Tant qu'il n'est pas configuré, il ne plante pas : il affiche
+juste un avertissement et saute le déploiement.
+
+Pour l'activer, **2 choses à faire une seule fois** :
+
+### a) Mettre le vrai id de projet dans `.firebaserc`
+
+Remplace le placeholder `shiori-app` par l'id réel de ton projet Firebase
+(visible dans la console Firebase). Le workflow lit l'alias `default`.
+
+### b) Créer le secret `FIREBASE_SERVICE_ACCOUNT`
+
+1. Console Firebase → ⚙️ **Paramètres du projet** → onglet **Comptes de service**
+   → **Générer une nouvelle clé privée**. Un fichier **JSON** est téléchargé.
+2. Sur GitHub : dépôt → **Settings** → **Secrets and variables** → **Actions**
+   → **New repository secret**.
+   - **Name** : `FIREBASE_SERVICE_ACCOUNT`
+   - **Secret** : colle **tout le contenu** du fichier JSON.
+
+C'est tout. Au prochain push sur `main`, le site se déploie tout seul. Tu peux
+aussi le lancer à la main depuis l'onglet **Actions** → *Déploiement Firebase
+Hosting* → **Run workflow**.
+
+> Le JSON du compte de service est sensible : ne le commit jamais dans le dépôt,
+> garde-le uniquement dans le secret GitHub.
+
 ## Comment c'est branché
 
 - **`firebase.json`** — config Hosting. Sert tout le dépôt (`"public": "."`),

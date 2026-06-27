@@ -1,0 +1,58 @@
+name: Déploiement Firebase Hosting
+
+# À chaque push sur main, le site est redéployé automatiquement.
+# (Déclenchable aussi à la main depuis l'onglet Actions.)
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Évite deux déploiements simultanés ; garde le plus récent.
+concurrency:
+  group: firebase-hosting
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      # Secret à créer dans Settings → Secrets and variables → Actions.
+      # Contenu = le JSON complet d'un compte de service Firebase (voir DEPLOY.md).
+      FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+    steps:
+      - name: Vérifier la configuration
+        id: check
+        run: |
+          if [ -z "$FIREBASE_SERVICE_ACCOUNT" ]; then
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::Secret FIREBASE_SERVICE_ACCOUNT absent — déploiement ignoré. Voir DEPLOY.md pour le configurer."
+          else
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout
+        if: steps.check.outputs.configured == 'true'
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        if: steps.check.outputs.configured == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Installer la CLI Firebase
+        if: steps.check.outputs.configured == 'true'
+        run: npm install -g firebase-tools
+
+      - name: Écrire les identifiants du compte de service
+        if: steps.check.outputs.configured == 'true'
+        run: printf '%s' "$FIREBASE_SERVICE_ACCOUNT" > "$RUNNER_TEMP/firebase-sa.json"
+
+      - name: Déployer sur Firebase Hosting
+        if: steps.check.outputs.configured == 'true'
+        run: firebase deploy --only hosting --project default --non-interactive
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/firebase-sa.json
