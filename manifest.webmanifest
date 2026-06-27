@@ -1,0 +1,21 @@
+{
+  "name": "Shiori — convertisseur Kobo",
+  "short_name": "Shiori",
+  "description": "Convertisseur de mangas/comics pour liseuses Kobo. 100% local : tout se passe dans le navigateur, rien n'est envoyé sur internet.",
+  "lang": "fr",
+  "dir": "ltr",
+  "id": "/",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#1a1714",
+  "theme_color": "#1a1714",
+  "categories": ["utilities", "books", "productivity"],
+  "icons": [
+    { "src": "/icons/icon.svg", "type": "image/svg+xml", "sizes": "any" },
+    { "src": "/icons/icon-192.png", "type": "image/png", "sizes": "192x192", "purpose": "any" },
+    { "src": "/icons/icon-512.png", "type": "image/png", "sizes": "512x512", "purpose": "any" },
+    { "src": "/icons/maskable-512.png", "type": "image/png", "sizes": "512x512", "purpose": "maskable" }
+  ]
+}

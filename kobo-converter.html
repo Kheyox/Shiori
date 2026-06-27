@@ -4,7 +4,19 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="theme-color" content="#1a1714">
+<meta name="description" content="Convertisseur de mangas/comics pour liseuses Kobo. 100% local : tout se passe dans le navigateur, rien n'est envoyé sur internet.">
 <title>Shiori — convertisseur Kobo</title>
+
+<!-- PWA -->
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" type="image/svg+xml" href="/icons/icon.svg">
+<link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png">
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Shiori">
+<meta name="mobile-web-app-capable" content="yes">
+
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <style>
   :root{
@@ -39,6 +51,10 @@
     display:inline-flex;gap:7px;align-items:center;white-space:nowrap}
   .device b{color:var(--text);font-weight:600}
   .dot{width:7px;height:7px;border-radius:50%;background:var(--ink)}
+  .install-chip{font-size:12.5px;color:var(--text);background:var(--ink);
+    border:1px solid var(--ink-deep);border-radius:999px;padding:6px 13px;cursor:pointer;
+    font-family:inherit;font-weight:600;white-space:nowrap;transition:.15s}
+  .install-chip:hover{background:var(--ink-deep)}
   .lede{color:var(--muted);font-size:14.5px;margin:10px 0 22px;max-width:62ch}
 
   /* Drop zone */
@@ -159,6 +175,7 @@
     <div class="logo"><span class="jp">栞</span>Shiori</div>
     <span class="tag">CBZ / ZIP / images → Kobo</span>
     <span class="device"><span class="dot"></span> Profil <b id="dev-name">Libra Colour</b> · <b id="dev-res">1264×1680</b></span>
+    <button id="install-btn" class="install-chip hidden" type="button">⤓ Installer l'app</button>
   </header>
   <p class="lede">Tout se passe dans ton navigateur — rien n'est envoyé sur internet. Fonctionne identique sur Windows, Chromebook et Android. Dépose tes mangas, ajuste, récupère un CBZ optimisé pour l'e-ink.</p>
 
@@ -272,7 +289,7 @@
   </div>
 
   <footer>
-    <strong style="color:var(--muted)">Shiori</strong> — convertisseur e-ink local. Astuce&nbsp;: pour l'installer en appli sur tes 3 appareils et l'utiliser hors-ligne, héberge ce fichier (ex. ton Firebase) et ajoute-le à l'écran d'accueil. Le CBZ sort prêt à copier dans le dossier de ta Kobo ou à pousser via Google&nbsp;Drive. Formats d'entrée&nbsp;: <code>.cbz</code> <code>.zip</code> et images. CBR/PDF/EPUB&nbsp;: en cours.
+    <strong style="color:var(--muted)">Shiori</strong> — convertisseur e-ink local. Installable en appli (PWA) sur tes 3 appareils&nbsp;: le bouton «&nbsp;Installer l'app&nbsp;» apparaît dans l'en-tête, ou ajoute la page à l'écran d'accueil. Une fois installée, elle fonctionne hors-ligne. Le CBZ sort prêt à copier dans le dossier de ta Kobo ou à pousser via Google&nbsp;Drive. Formats d'entrée&nbsp;: <code>.cbz</code> <code>.zip</code> et images. CBR/PDF/EPUB&nbsp;: en cours.
   </footer>
 </div>
 
@@ -823,6 +840,39 @@ els.nextSpread.addEventListener("click",async()=>{
 
 els.convert.addEventListener("click",runConvert);
 els.reset.addEventListener("click",resetAll);
+</script>
+
+<!-- PWA : service worker + invite d'installation -->
+<script>
+"use strict";
+// Enregistre le service worker (hors-ligne + installable). Nécessite un contexte
+// sécurisé : ça marche sur https:// (Firebase) et sur http://localhost.
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("/sw.js").catch(err => console.warn("SW non enregistré :", err));
+  });
+}
+
+// Bouton « Installer l'app » : n'apparaît que si le navigateur le propose.
+let deferredPrompt = null;
+const installBtn = document.getElementById("install-btn");
+window.addEventListener("beforeinstallprompt", (e) => {
+  e.preventDefault();
+  deferredPrompt = e;
+  if (installBtn) installBtn.classList.remove("hidden");
+});
+if (installBtn) {
+  installBtn.addEventListener("click", async () => {
+    if (!deferredPrompt) return;
+    deferredPrompt.prompt();
+    try { await deferredPrompt.userChoice; } catch (_) {}
+    deferredPrompt = null;
+    installBtn.classList.add("hidden");
+  });
+}
+window.addEventListener("appinstalled", () => {
+  if (installBtn) installBtn.classList.add("hidden");
+});
 </script>
 </body>
 </html>
