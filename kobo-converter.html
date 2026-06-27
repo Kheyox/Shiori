@@ -1,0 +1,828 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#1a1714">
+<title>Shiori — convertisseur Kobo</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<style>
+  :root{
+    --bg:#1a1714;
+    --surface:#221d17;
+    --surface-2:#2b2419;
+    --border:#3a342b;
+    --paper:#f3ede1;
+    --ink:#e0533d;        /* hanko / cover red */
+    --ink-deep:#c4422e;
+    --text:#ece4d6;
+    --muted:#a89d8c;
+    --muted-2:#7d7261;
+    --ok:#7fae6e;
+    --radius:14px;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--bg);color:var(--text);
+    font-family:"Inter",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,system-ui,sans-serif;
+    -webkit-font-smoothing:antialiased;}
+  body{min-height:100vh;padding:24px 18px 56px;line-height:1.5}
+  .wrap{max-width:980px;margin:0 auto}
+
+  /* Header */
+  header{display:flex;align-items:baseline;gap:14px;flex-wrap:wrap;margin-bottom:6px}
+  .logo{font-weight:800;font-size:30px;letter-spacing:-.02em;
+    font-family:"Hiragino Mincho ProN","Yu Mincho",Georgia,"Times New Roman",serif;}
+  .logo .jp{color:var(--ink);font-weight:400;margin-right:8px}
+  .tag{color:var(--muted);font-size:14px}
+  .device{margin-left:auto;font-size:12.5px;color:var(--muted);
+    border:1px solid var(--border);border-radius:999px;padding:5px 12px;
+    display:inline-flex;gap:7px;align-items:center;white-space:nowrap}
+  .device b{color:var(--text);font-weight:600}
+  .dot{width:7px;height:7px;border-radius:50%;background:var(--ink)}
+  .lede{color:var(--muted);font-size:14.5px;margin:10px 0 22px;max-width:62ch}
+
+  /* Drop zone */
+  .drop{border:1.5px dashed var(--border);border-radius:var(--radius);
+    padding:42px 24px;text-align:center;cursor:pointer;transition:.18s;
+    background:var(--surface);position:relative}
+  .drop:hover,.drop.hot{border-color:var(--ink);background:var(--surface-2)}
+  .drop h2{margin:0 0 6px;font-size:18px;font-weight:600}
+  .drop p{margin:0;color:var(--muted);font-size:13.5px}
+  .drop .ic{font-size:30px;display:block;margin-bottom:10px;opacity:.85}
+  .formats{margin-top:14px;font-size:11.5px;color:var(--muted-2);letter-spacing:.04em}
+
+  /* Layout after load */
+  .grid{display:grid;grid-template-columns:300px 1fr;gap:22px;margin-top:22px}
+  @media(max-width:760px){.grid{grid-template-columns:1fr}}
+
+  .panel{background:var(--surface);border:1px solid var(--border);
+    border-radius:var(--radius);padding:18px}
+  .panel h3{margin:0 0 4px;font-size:11px;letter-spacing:.14em;text-transform:uppercase;
+    color:var(--muted);font-weight:700}
+  .panel .sub{font-size:12px;color:var(--muted-2);margin:0 0 16px}
+
+  .field{margin-bottom:17px}
+  .field:last-child{margin-bottom:0}
+  label.lbl{display:flex;justify-content:space-between;align-items:center;
+    font-size:13.5px;font-weight:500;margin-bottom:7px}
+  label.lbl .val{color:var(--ink);font-variant-numeric:tabular-nums;font-size:12.5px}
+  select,input[type=number]{width:100%;background:var(--bg);color:var(--text);
+    border:1px solid var(--border);border-radius:9px;padding:9px 10px;font-size:13.5px;font-family:inherit}
+  select:focus,input:focus{outline:2px solid var(--ink);outline-offset:1px;border-color:transparent}
+  input[type=range]{width:100%;accent-color:var(--ink);margin:2px 0}
+
+  .toggle{display:flex;align-items:center;gap:11px;cursor:pointer;
+    padding:9px 0;font-size:13.5px;user-select:none}
+  .toggle input{position:absolute;opacity:0;pointer-events:none}
+  .sw{width:38px;height:22px;border-radius:999px;background:var(--surface-2);
+    border:1px solid var(--border);position:relative;flex:0 0 auto;transition:.16s}
+  .sw::after{content:"";position:absolute;top:2px;left:2px;width:16px;height:16px;
+    border-radius:50%;background:var(--muted);transition:.16s}
+  .toggle input:checked + .sw{background:var(--ink);border-color:var(--ink-deep)}
+  .toggle input:checked + .sw::after{transform:translateX(16px);background:#fff}
+  .toggle .desc{display:block;font-size:11.5px;color:var(--muted-2);margin-top:1px}
+  .toggle .stack{display:flex;flex-direction:column}
+  .dims{display:grid;grid-template-columns:1fr auto 1fr;gap:8px;align-items:center}
+  .dims .x{color:var(--muted-2)}
+
+  /* Preview */
+  .pv-head{display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap}
+  .pv-head h3{margin:0;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);font-weight:700}
+  .pager{margin-left:auto;display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--muted)}
+  .pager button{background:var(--surface-2);border:1px solid var(--border);color:var(--text);
+    width:28px;height:28px;border-radius:7px;cursor:pointer;font-size:14px;line-height:1}
+  .pager button:hover{border-color:var(--ink)}
+  .pager button:disabled{opacity:.35;cursor:default}
+  .rtl-badge{font-size:10.5px;color:var(--ink);border:1px solid var(--border);
+    border-radius:6px;padding:2px 7px;letter-spacing:.05em}
+
+  /* Kobo device mockup */
+  .kobo-wrap{display:flex;flex-direction:column;align-items:center;gap:12px}
+  .kobo{position:relative;width:100%;max-width:360px;background:#15120e;
+    border-radius:20px;padding:18px 18px 30px;
+    box-shadow:0 22px 50px -22px #000,0 0 0 1px #000,inset 0 0 0 1px #423a2e;}
+  .kobo::after{content:"";position:absolute;left:50%;bottom:12px;transform:translateX(-50%);
+    width:30px;height:6px;border-radius:999px;background:#2f281e}
+  .kobo-screen{background:#f6f1e6;border-radius:5px;overflow:hidden;
+    display:flex;align-items:center;justify-content:center;
+    box-shadow:inset 0 0 0 1px #000,inset 0 2px 12px -4px rgba(0,0,0,.4);
+    aspect-ratio:1264/1680}
+  .kobo-screen canvas{max-width:100%;max-height:100%;display:block}
+  .kobo-screen.empty{color:#8a7f6d;font-size:12px;background:#e9e2d3}
+  .kobo-status{font-size:12px;color:var(--muted);text-align:center;min-height:16px}
+  .kobo-status b{color:var(--ink);font-weight:600}
+
+  /* Convert bar */
+  .runbar{display:flex;align-items:center;gap:16px;margin-top:22px;flex-wrap:wrap}
+  .btn{background:var(--ink);color:#fff;border:none;border-radius:11px;
+    padding:13px 26px;font-size:15px;font-weight:600;cursor:pointer;
+    font-family:inherit;transition:.15s;letter-spacing:.01em}
+  .btn:hover{background:var(--ink-deep)}
+  .btn:disabled{opacity:.5;cursor:default}
+  .btn.ghost{background:transparent;color:var(--muted);border:1px solid var(--border)}
+  .btn.ghost:hover{color:var(--text);border-color:var(--ink);background:transparent}
+  .prog{flex:1;min-width:180px}
+  .prog .bar{height:8px;background:var(--surface-2);border-radius:999px;overflow:hidden;border:1px solid var(--border)}
+  .prog .fill{height:100%;width:0;background:var(--ink);transition:width .12s}
+  .prog .txt{font-size:12px;color:var(--muted);margin-top:6px;font-variant-numeric:tabular-nums}
+
+  /* Results */
+  .results{margin-top:18px;display:flex;flex-direction:column;gap:10px}
+  .res{display:flex;align-items:center;gap:13px;background:var(--surface);
+    border:1px solid var(--border);border-radius:11px;padding:13px 15px}
+  .res .nm{font-weight:600;font-size:14px}
+  .res .meta{font-size:12px;color:var(--muted)}
+  .res .grow{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis}
+  .res .dl{background:var(--surface-2);border:1px solid var(--border);color:var(--text);
+    text-decoration:none;border-radius:8px;padding:8px 15px;font-size:13px;font-weight:600;white-space:nowrap}
+  .res .dl:hover{border-color:var(--ink);color:var(--ink)}
+  .res .chk{color:var(--ok);font-size:16px}
+  .res-actions{display:flex;align-items:center;gap:12px;flex-wrap:wrap;
+    background:var(--surface-2);border:1px solid var(--border);border-radius:11px;padding:12px 15px;margin-bottom:4px}
+  .res-actions .ra-info{font-size:13px;color:var(--muted);margin-right:auto}
+  .ra-btn{background:var(--ink);color:#fff;border:none;border-radius:9px;
+    padding:9px 16px;font-size:13.5px;font-weight:600;cursor:pointer;font-family:inherit}
+  .ra-btn:hover{background:var(--ink-deep)}
+  .ra-btn:disabled{opacity:.55;cursor:default}
+  .ra-btn.drive{background:transparent;color:var(--text);border:1px solid var(--border)}
+  .ra-btn.drive:hover{border-color:var(--ink);color:var(--ink);background:transparent}
+
+  footer{margin-top:40px;color:var(--muted-2);font-size:12px;line-height:1.7;
+    border-top:1px solid var(--border);padding-top:18px}
+  footer code{background:var(--surface-2);padding:1px 6px;border-radius:5px;color:var(--muted);font-size:11.5px}
+  .hidden{display:none!important}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="logo"><span class="jp">栞</span>Shiori</div>
+    <span class="tag">CBZ / ZIP / images → Kobo</span>
+    <span class="device"><span class="dot"></span> Profil <b id="dev-name">Libra Colour</b> · <b id="dev-res">1264×1680</b></span>
+  </header>
+  <p class="lede">Tout se passe dans ton navigateur — rien n'est envoyé sur internet. Fonctionne identique sur Windows, Chromebook et Android. Dépose tes mangas, ajuste, récupère un CBZ optimisé pour l'e-ink.</p>
+
+  <div class="drop" id="drop">
+    <span class="ic">本</span>
+    <h2>Dépose tes fichiers ici</h2>
+    <p>ou clique pour parcourir</p>
+    <div class="formats">.CBZ · .ZIP · JPG · PNG · WEBP — plusieurs volumes acceptés</div>
+    <input type="file" id="file" multiple accept=".cbz,.zip,image/*" class="hidden">
+  </div>
+
+  <div id="workspace" class="hidden">
+    <div class="grid">
+      <!-- Settings -->
+      <div class="panel" id="settings">
+        <h3>Réglages</h3>
+        <p class="sub" id="job-count">0 fichier</p>
+
+        <div class="field">
+          <label class="lbl" for="profile">Appareil</label>
+          <select id="profile">
+            <option value="1264x1680" selected>Kobo Libra Colour — 1264×1680</option>
+            <option value="1072x1448">Kobo Clara Colour / BW — 1072×1448</option>
+            <option value="1440x1920">Kobo Sage — 1440×1920</option>
+            <option value="1404x1872">Kobo Elipsa 2E — 1404×1872</option>
+            <option value="custom">Personnalisé…</option>
+          </select>
+        </div>
+
+        <div class="field hidden" id="custom-dims">
+          <label class="lbl">Dimensions cibles (px)</label>
+          <div class="dims">
+            <input type="number" id="cw" value="1264" min="200" max="4000">
+            <span class="x">×</span>
+            <input type="number" id="ch" value="1680" min="200" max="4000">
+          </div>
+        </div>
+
+        <label class="toggle"><input type="checkbox" id="gray" checked><span class="sw"></span>
+          <span class="stack">Niveaux de gris<span class="desc">Fichiers plus légers — idéal manga N&B</span></span></label>
+
+        <label class="toggle"><input type="checkbox" id="rtl" checked><span class="sw"></span>
+          <span class="stack">Sens manga (droite → gauche)<span class="desc">Ajoute ComicInfo pour la liseuse</span></span></label>
+
+        <div class="field" style="margin:6px 0 0">
+          <label class="lbl" for="dblmode">Doubles pages (planches larges)</label>
+          <select id="dblmode">
+            <option value="rotate" selected>Rotation paysage — 1 page</option>
+            <option value="split">Couper en 2 pages</option>
+            <option value="both">Paysage + coupé — 3 pages</option>
+            <option value="keep">Garder large (sans rotation)</option>
+          </select>
+        </div>
+
+        <div class="field hidden" id="rotdir-field" style="margin-top:11px">
+          <label class="lbl" for="rotdir">Sens de rotation</label>
+          <select id="rotdir">
+            <option value="cw" selected>Horaire (incliner à droite)</option>
+            <option value="ccw">Anti-horaire (incliner à gauche)</option>
+          </select>
+        </div>
+
+        <label class="toggle"><input type="checkbox" id="levels"><span class="sw"></span>
+          <span class="stack">Corriger les noirs (auto-niveaux)<span class="desc">Ravive les scans délavés</span></span></label>
+
+        <label class="toggle"><input type="checkbox" id="trim"><span class="sw"></span>
+          <span class="stack">Rogner les marges blanches<span class="desc">Plein écran sans bordure</span></span></label>
+
+        <div class="field" style="margin-top:17px">
+          <label class="lbl" for="gamma">Gamma <span class="val" id="gamma-v">1.00</span></label>
+          <input type="range" id="gamma" min="0.5" max="1.6" step="0.05" value="1">
+        </div>
+
+        <div class="field">
+          <label class="lbl" for="quality">Qualité JPEG <span class="val" id="quality-v">85</span></label>
+          <input type="range" id="quality" min="55" max="100" step="1" value="85">
+        </div>
+      </div>
+
+      <!-- Preview -->
+      <div class="panel">
+        <div class="pv-head">
+          <h3>Aperçu Kobo</h3>
+          <span class="rtl-badge hidden" id="rtl-ind">← lecture manga</span>
+          <div class="pager">
+            <button id="prev" title="Page précédente">‹</button>
+            <span id="pg-label">—</span>
+            <button id="next" title="Page suivante">›</button>
+            <button id="next-spread" title="Aller à la prochaine planche large" style="width:auto;padding:0 9px">⟫ planche</button>
+          </div>
+        </div>
+        <div class="kobo-wrap">
+          <div class="kobo">
+            <div class="kobo-screen empty" id="kobo-screen">Chargement…</div>
+          </div>
+          <div class="kobo-status" id="kobo-status"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="runbar">
+      <button class="btn" id="convert">Convertir</button>
+      <button class="btn ghost" id="reset">Recommencer</button>
+      <div class="prog hidden" id="prog">
+        <div class="bar"><div class="fill" id="prog-fill"></div></div>
+        <div class="txt" id="prog-txt"></div>
+      </div>
+    </div>
+
+    <div class="results" id="results"></div>
+  </div>
+
+  <footer>
+    <strong style="color:var(--muted)">Shiori</strong> — convertisseur e-ink local. Astuce&nbsp;: pour l'installer en appli sur tes 3 appareils et l'utiliser hors-ligne, héberge ce fichier (ex. ton Firebase) et ajoute-le à l'écran d'accueil. Le CBZ sort prêt à copier dans le dossier de ta Kobo ou à pousser via Google&nbsp;Drive. Formats d'entrée&nbsp;: <code>.cbz</code> <code>.zip</code> et images. CBR/PDF/EPUB&nbsp;: en cours.
+  </footer>
+</div>
+
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+<script>
+"use strict";
+
+/* ---------- State ---------- */
+const state = {
+  jobs: [],        // { name, pages:[{name, blob}] }
+  flatPreview: [], // [{jobIdx, pageIdx}]
+  previewPos: 0,
+  subPos: 0,
+  outputs: [],     // converted CBZ blobs for batch actions
+  srcBitmapCache: null,
+  srcBitmapKey: null,
+};
+
+const $ = id => document.getElementById(id);
+const els = {
+  drop:$("drop"), file:$("file"), workspace:$("workspace"),
+  profile:$("profile"), customDims:$("custom-dims"), cw:$("cw"), ch:$("ch"),
+  gray:$("gray"), rtl:$("rtl"), dblmode:$("dblmode"), rotdir:$("rotdir"), rotdirField:$("rotdir-field"),
+  levels:$("levels"), trim:$("trim"),
+  gamma:$("gamma"), gammaV:$("gamma-v"), quality:$("quality"), qualityV:$("quality-v"),
+  prev:$("prev"), next:$("next"), pgLabel:$("pg-label"),
+  koboScreen:$("kobo-screen"), koboStatus:$("kobo-status"), rtlInd:$("rtl-ind"),
+  nextSpread:$("next-spread"),
+  convert:$("convert"), reset:$("reset"), prog:$("prog"), progFill:$("prog-fill"), progTxt:$("prog-txt"),
+  results:$("results"), jobCount:$("job-count"), devName:$("dev-name"), devRes:$("dev-res"),
+};
+
+/* ---------- Settings helpers ---------- */
+function targetDims(){
+  if(els.profile.value==="custom"){
+    return {w:clamp(+els.cw.value,200,4000), h:clamp(+els.ch.value,200,4000)};
+  }
+  const [w,h]=els.profile.value.split("x").map(Number);
+  return {w,h};
+}
+function clamp(n,a,b){return Math.max(a,Math.min(b,isNaN(n)?a:n));}
+function opts(){
+  const d=targetDims();
+  return {
+    tw:d.w, th:d.h,
+    gray:els.gray.checked, rtl:els.rtl.checked,
+    dblmode:els.dblmode.value, rotdir:els.rotdir.value,
+    levels:els.levels.checked, trim:els.trim.checked,
+    gamma:+els.gamma.value, quality:+els.quality.value/100,
+  };
+}
+
+/* ---------- Natural sort ---------- */
+const collator = new Intl.Collator(undefined,{numeric:true,sensitivity:"base"});
+const natSort = (a,b)=>collator.compare(a,b);
+
+const IMG_RE = /\.(jpe?g|png|webp|gif|bmp)$/i;
+function isJunk(name){
+  const base=name.split("/").pop();
+  return name.includes("__MACOSX") || base.startsWith(".") || name.endsWith("/");
+}
+
+/* ---------- Loading files ---------- */
+async function handleFiles(fileList){
+  const files=[...fileList];
+  const archives=files.filter(f=>/\.(cbz|zip)$/i.test(f.name));
+  const loose=files.filter(f=>f.type.startsWith("image/")||IMG_RE.test(f.name));
+
+  for(const arc of archives){
+    try{
+      const zip=await JSZip.loadAsync(arc);
+      const entries=Object.values(zip.files)
+        .filter(e=>!e.dir && IMG_RE.test(e.name) && !isJunk(e.name))
+        .sort((x,y)=>natSort(x.name,y.name));
+      const pages=[];
+      for(const e of entries){
+        pages.push({name:e.name.split("/").pop(), blob:await e.async("blob")});
+      }
+      if(pages.length) state.jobs.push({name:cleanName(arc.name), pages});
+    }catch(err){ console.error("zip fail",arc.name,err); }
+  }
+
+  if(loose.length){
+    const pages=loose.sort((a,b)=>natSort(a.name,b.name)).map(f=>({name:f.name,blob:f}));
+    state.jobs.push({name:"images", pages});
+  }
+
+  if(!state.jobs.length){ alert("Aucune image trouvée dans les fichiers déposés."); return; }
+  buildPreviewIndex();
+  enterWorkspace();
+}
+function cleanName(n){ return n.replace(/\.(cbz|zip)$/i,""); }
+
+function buildPreviewIndex(){
+  state.flatPreview=[];
+  state.jobs.forEach((job,ji)=>job.pages.forEach((_,pi)=>state.flatPreview.push({ji,pi})));
+  state.previewPos=0;
+}
+
+/* ---------- Image processing core ---------- */
+async function blobToBitmap(blob){
+  if("createImageBitmap" in window){
+    try{ return await createImageBitmap(blob); }catch(e){}
+  }
+  return await new Promise((res,rej)=>{
+    const img=new Image(); const url=URL.createObjectURL(blob);
+    img.onload=()=>{URL.revokeObjectURL(url);res(img);};
+    img.onerror=e=>{URL.revokeObjectURL(url);rej(e);};
+    img.src=url;
+  });
+}
+
+// Returns array of canvases (1, 2, or 3 depending on the double-page mode)
+function processBitmap(bmp, o){
+  const isSpread = bmp.width > bmp.height*1.15;
+  if(!isSpread || o.dblmode==="keep"){
+    return [renderRegion(bmp,0,0,bmp.width,bmp.height,o)];
+  }
+  const cw = o.rotdir==="cw";
+  const rotated = ()=>renderRotated(bmp, fullOrTrim(bmp,o), o, cw);
+  const halfW = Math.floor(bmp.width/2);
+  const splitPages = ()=>{
+    const left = renderRegion(bmp,0,0,halfW,bmp.height,o);
+    const right = renderRegion(bmp,halfW,0,bmp.width-halfW,bmp.height,o);
+    return o.rtl ? [right,left] : [left,right]; // manga: right page first
+  };
+  if(o.dblmode==="rotate") return [rotated()];
+  if(o.dblmode==="split")  return splitPages();
+  return [rotated(), ...splitPages()]; // "both": full spread, then each half
+}
+
+function fullOrTrim(bmp,o){
+  return o.trim ? trimBox(bmp,0,0,bmp.width,bmp.height) : {sx:0,sy:0,sw:bmp.width,sh:bmp.height};
+}
+
+// Rotate a (sub-)region 90° to fill the portrait target, then apply pixel ops
+function renderRotated(bmp, box, o, clockwise){
+  const scale = Math.min(o.tw/box.sh, o.th/box.sw); // dims swap after rotation
+  const dw = Math.max(1,Math.round(box.sh*scale));  // rotated width  = source height
+  const dh = Math.max(1,Math.round(box.sw*scale));  // rotated height = source width
+  const cv = document.createElement("canvas");
+  cv.width=dw; cv.height=dh;
+  const ctx=cv.getContext("2d");
+  ctx.imageSmoothingQuality="high";
+  ctx.save();
+  if(clockwise){ ctx.translate(dw,0); ctx.rotate(Math.PI/2); }
+  else{ ctx.translate(0,dh); ctx.rotate(-Math.PI/2); }
+  ctx.drawImage(bmp, box.sx,box.sy,box.sw,box.sh, 0,0, dh, dw);
+  ctx.restore();
+  applyPixelOps(ctx,dw,dh,o);
+  return cv;
+}
+
+function renderRegion(bmp,sx,sy,sw,sh,o){
+  // optional margin trim (on the source region)
+  let box={sx,sy,sw,sh};
+  if(o.trim){ box=trimBox(bmp,sx,sy,sw,sh); }
+
+  // scale to fit target while preserving aspect (contain), no upscaling beyond 1.5x
+  const scale=Math.min(o.tw/box.sw, o.th/box.sh);
+  const dw=Math.max(1,Math.round(box.sw*scale));
+  const dh=Math.max(1,Math.round(box.sh*scale));
+
+  const cv=document.createElement("canvas");
+  cv.width=dw; cv.height=dh;
+  const ctx=cv.getContext("2d");
+  ctx.imageSmoothingQuality="high";
+  ctx.drawImage(bmp,box.sx,box.sy,box.sw,box.sh,0,0,dw,dh);
+
+  applyPixelOps(ctx,dw,dh,o);
+  return cv;
+}
+
+function trimBox(bmp,sx,sy,sw,sh){
+  // sample on a downscaled copy for speed
+  const SAMP=Math.min(900, Math.max(sw,sh));
+  const s=SAMP/Math.max(sw,sh);
+  const w=Math.max(1,Math.round(sw*s)), h=Math.max(1,Math.round(sh*s));
+  const c=document.createElement("canvas"); c.width=w;c.height=h;
+  const cx=c.getContext("2d",{willReadFrequently:true});
+  cx.drawImage(bmp,sx,sy,sw,sh,0,0,w,h);
+  const d=cx.getImageData(0,0,w,h).data;
+  const TH=238; // near-white threshold
+  let top=0,bottom=h-1,left=0,right=w-1;
+  const rowWhite=y=>{for(let x=0;x<w;x++){const i=(y*w+x)*4;if(d[i]<TH||d[i+1]<TH||d[i+2]<TH)return false;}return true;};
+  const colWhite=x=>{for(let y=0;y<h;y++){const i=(y*w+x)*4;if(d[i]<TH||d[i+1]<TH||d[i+2]<TH)return false;}return true;};
+  while(top<bottom&&rowWhite(top))top++;
+  while(bottom>top&&rowWhite(bottom))bottom--;
+  while(left<right&&colWhite(left))left++;
+  while(right>left&&colWhite(right))right--;
+  // small padding back, map to source coords
+  const pad=Math.round(4/s);
+  const nx=sx+Math.max(0,left/s-pad), ny=sy+Math.max(0,top/s-pad);
+  const nw=Math.min(sw-(nx-sx),(right-left+1)/s+pad*2);
+  const nh=Math.min(sh-(ny-sy),(bottom-top+1)/s+pad*2);
+  if(nw<sw*0.3||nh<sh*0.3) return {sx,sy,sw,sh}; // bail if trim looks wrong
+  return {sx:nx,sy:ny,sw:nw,sh:nh};
+}
+
+function applyPixelOps(ctx,w,h,o){
+  if(!o.gray && o.gamma===1 && !o.levels) return;
+  const img=ctx.getImageData(0,0,w,h);
+  const d=img.data;
+  // gamma LUT
+  const gl=new Uint8Array(256);
+  for(let i=0;i<256;i++) gl[i]=Math.round(255*Math.pow(i/255,1/o.gamma));
+  // first pass: grayscale + gamma, track min/max for levels
+  let mn=255,mx=0;
+  for(let i=0;i<d.length;i+=4){
+    let r=d[i],g=d[i+1],b=d[i+2];
+    if(o.gray){
+      const y=(r*0.299+g*0.587+b*0.114)|0;
+      r=g=b=y;
+    }
+    r=gl[r];g=gl[g];b=gl[b];
+    d[i]=r;d[i+1]=g;d[i+2]=b;
+    if(o.levels){
+      const l=o.gray?r:(r*0.299+g*0.587+b*0.114)|0;
+      if(l<mn)mn=l; if(l>mx)mx=l;
+    }
+  }
+  if(o.levels && mx>mn){
+    const range=mx-mn;
+    const ll=new Uint8Array(256);
+    for(let i=0;i<256;i++) ll[i]=clamp(Math.round((i-mn)/range*255),0,255);
+    for(let i=0;i<d.length;i+=4){ d[i]=ll[d[i]];d[i+1]=ll[d[i+1]];d[i+2]=ll[d[i+2]]; }
+  }
+  ctx.putImageData(img,0,0);
+}
+
+function canvasToBlob(cv,quality){
+  return new Promise(res=>cv.toBlob(b=>res(b),"image/jpeg",quality));
+}
+
+/* ---------- Preview ---------- */
+let pvTimer=null;
+function schedulePreview(){clearTimeout(pvTimer);pvTimer=setTimeout(renderPreview,140);}
+
+async function renderPreview(){
+  if(!state.flatPreview.length)return;
+  const {ji,pi}=state.flatPreview[state.previewPos];
+  const job=state.jobs[ji]; const page=job.pages[pi];
+  const o=opts();
+  els.rtlInd.classList.toggle("hidden",!o.rtl);
+
+  // match the screen aspect to the selected device
+  els.koboScreen.style.aspectRatio=`${o.tw}/${o.th}`;
+
+  // decode source (cache by page identity)
+  const key=ji+":"+pi;
+  if(state.srcBitmapKey!==key){
+    try{ state.srcBitmapCache=await blobToBitmap(page.blob); state.srcBitmapKey=key; }
+    catch(e){ els.koboScreen.textContent="image illisible"; return; }
+  }
+  const bmp=state.srcBitmapCache;
+  const isSpread=bmp.width>bmp.height*1.15;
+
+  // the device pages this source page becomes, under current settings
+  const outs=processBitmap(bmp,o);
+  if(state.subPos>=outs.length) state.subPos=outs.length-1;
+  if(state.subPos<0) state.subPos=0;
+
+  // render the current device page onto the Kobo screen
+  els.koboScreen.classList.remove("empty"); els.koboScreen.innerHTML="";
+  els.koboScreen.appendChild(outs[state.subPos]);
+
+  // labels
+  const sub = outs.length>1 ? ` · vue ${state.subPos+1}/${outs.length}` : "";
+  els.pgLabel.textContent=`p.${state.previewPos+1}/${state.flatPreview.length}${sub}`;
+  els.koboStatus.innerHTML = deviceLabel(o,isSpread,outs.length,state.subPos);
+}
+
+function deviceLabel(o,isSpread,n,sub){
+  if(!isSpread || o.dblmode==="keep") return `${o.tw}×${o.th} — page simple`;
+  if(o.dblmode==="rotate") return `<b>planche large</b> → pivotée en paysage`;
+  if(o.dblmode==="split")  return `<b>planche large</b> → moitié ${sub+1}/2`;
+  // both
+  return sub===0 ? `<b>planche large</b> → vue paysage` : `<b>planche large</b> → moitié ${sub}/2`;
+}
+
+/* ---------- Convert ---------- */
+async function runConvert(){
+  els.convert.disabled=true; els.reset.disabled=true;
+  els.prog.classList.remove("hidden");
+  els.results.innerHTML="";
+  state.outputs=[];
+  const o=opts();
+  const total=state.flatPreview.length;
+  let done=0;
+  const nJobs=state.jobs.length;
+
+  for(let j=0;j<nJobs;j++){
+    const job=state.jobs[j];
+    const zip=new JSZip();
+    let outIdx=1, outCount=0;
+    const pad=String(job.pages.length*2).length;
+    for(const page of job.pages){
+      let bmp;
+      try{ bmp=await blobToBitmap(page.blob); }
+      catch(e){ done++; continue; }
+      const canvases=processBitmap(bmp,o);
+      for(const cv of canvases){
+        const blob=await canvasToBlob(cv,o.quality);
+        zip.file(String(outIdx).padStart(pad,"0")+".jpg", blob);
+        outIdx++; outCount++;
+      }
+      if(bmp.close) bmp.close();
+      done++;
+      const pct=Math.round(done/total*100);
+      els.progFill.style.width=pct+"%";
+      els.progTxt.textContent=`Tome ${j+1}/${nJobs} · ${job.name} — ${done}/${total} pages`;
+      await new Promise(r=>setTimeout(r,0)); // yield to UI
+    }
+    if(o.rtl) zip.file("ComicInfo.xml", comicInfoXML(job.name, outCount));
+    const cbz=await zip.generateAsync({type:"blob",compression:"STORE"});
+    const filename=job.name+" (Kobo).cbz";
+    state.outputs.push({filename, blob:cbz, pageCount:outCount});
+    addResult(filename, cbz, outCount);
+  }
+  els.progTxt.textContent=`Terminé ✓ — ${nJobs} tome${nJobs>1?"s":""}`;
+  els.progFill.style.width="100%";
+  renderResultsHeader();
+  els.convert.disabled=false; els.reset.disabled=false;
+}
+
+// Top actions over the results list: download-all zip + Drive export
+function renderResultsHeader(){
+  if(!state.outputs.length) return;
+  const bar=document.createElement("div");
+  bar.className="res-actions";
+  const totalMB=(state.outputs.reduce((s,o)=>s+o.blob.size,0)/1048576).toFixed(0);
+  bar.innerHTML=`<span class="ra-info">${state.outputs.length} fichier${state.outputs.length>1?"s":""} · ${totalMB} Mo au total</span>`;
+  if(state.outputs.length>1){
+    const allBtn=document.createElement("button");
+    allBtn.className="ra-btn"; allBtn.textContent="⤓ Tout télécharger (.zip)";
+    allBtn.onclick=()=>downloadAllZip(allBtn);
+    bar.appendChild(allBtn);
+  }
+  const drvBtn=document.createElement("button");
+  drvBtn.className="ra-btn drive"; drvBtn.textContent="▲ Envoyer vers Drive";
+  drvBtn.onclick=()=>exportToDrive(drvBtn);
+  bar.appendChild(drvBtn);
+  els.results.prepend(bar);
+}
+
+async function downloadAllZip(btn){
+  btn.disabled=true; const old=btn.textContent; btn.textContent="Compression…";
+  try{
+    const zip=new JSZip();
+    state.outputs.forEach(o=>zip.file(o.filename,o.blob));
+    const blob=await zip.generateAsync({type:"blob",compression:"STORE"});
+    const a=document.createElement("a");
+    a.href=URL.createObjectURL(blob); a.download="Shiori — "+state.outputs.length+" tomes.zip";
+    a.click();
+    setTimeout(()=>URL.revokeObjectURL(a.href),4000);
+  }catch(e){ alert("Échec de la création du zip : "+e.message); }
+  btn.disabled=false; btn.textContent=old;
+}
+
+function comicInfoXML(title,count){
+  const esc=s=>s.replace(/[<>&]/g,c=>({"<":"&lt;",">":"&gt;","&":"&amp;"}[c]));
+  return `<?xml version="1.0" encoding="utf-8"?>
+<ComicInfo xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+  <Title>${esc(title)}</Title>
+  <PageCount>${count}</PageCount>
+  <Manga>YesAndRightToLeft</Manga>
+</ComicInfo>`;
+}
+
+function addResult(filename, blob, pageCount){
+  const url=URL.createObjectURL(blob);
+  const sizeMB=(blob.size/1048576).toFixed(1);
+  const row=document.createElement("div");
+  row.className="res";
+  row.innerHTML=`<span class="chk">✓</span>
+    <div class="grow"><div class="nm"></div>
+    <div class="meta">${pageCount} pages · ${sizeMB} Mo</div></div>`;
+  row.querySelector(".nm").textContent=filename;
+  const a=document.createElement("a");
+  a.className="dl"; a.href=url; a.download=filename; a.textContent="Télécharger";
+  row.appendChild(a);
+  els.results.appendChild(row);
+}
+
+/* ---------- Google Drive export ----------
+   Pour activer : héberge cette page (ton Firebase), crée un ID client OAuth
+   Google (type "Web", origine = ton domaine), active l'API Drive, et colle
+   l'ID ci-dessous. Scope drive.file = Shiori ne voit que les fichiers qu'il crée. */
+const GOOGLE_CLIENT_ID = ""; // ex: "xxxxx.apps.googleusercontent.com"
+let driveToken=null, driveTokenClient=null;
+
+function driveReady(){ return !!(window.google && google.accounts && google.accounts.oauth2); }
+
+function ensureDriveClient(){
+  if(driveTokenClient) return true;
+  if(!driveReady() || !GOOGLE_CLIENT_ID) return false;
+  driveTokenClient = google.accounts.oauth2.initTokenClient({
+    client_id: GOOGLE_CLIENT_ID,
+    scope: "https://www.googleapis.com/auth/drive.file",
+    callback: ()=>{}, // set per-request
+  });
+  return true;
+}
+
+function getDriveToken(){
+  return new Promise((resolve,reject)=>{
+    if(!ensureDriveClient()) return reject(new Error("client"));
+    driveTokenClient.callback=(resp)=>{
+      if(resp && resp.access_token){ driveToken=resp.access_token; resolve(driveToken); }
+      else reject(new Error("auth"));
+    };
+    driveTokenClient.requestAccessToken({prompt: driveToken?"":"consent"});
+  });
+}
+
+async function findOrCreateFolder(name){
+  const q=encodeURIComponent(`name='${name}' and mimeType='application/vnd.google-apps.folder' and trashed=false`);
+  const r=await fetch(`https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id)`,
+    {headers:{Authorization:"Bearer "+driveToken}});
+  const j=await r.json();
+  if(j.files && j.files.length) return j.files[0].id;
+  const c=await fetch("https://www.googleapis.com/drive/v3/files",{
+    method:"POST",headers:{Authorization:"Bearer "+driveToken,"Content-Type":"application/json"},
+    body:JSON.stringify({name,mimeType:"application/vnd.google-apps.folder"})});
+  return (await c.json()).id;
+}
+
+async function uploadToDrive(name,blob,folderId){
+  const meta={name,parents:folderId?[folderId]:undefined};
+  const form=new FormData();
+  form.append("metadata",new Blob([JSON.stringify(meta)],{type:"application/json"}));
+  form.append("file",blob);
+  const r=await fetch("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart",{
+    method:"POST",headers:{Authorization:"Bearer "+driveToken},body:form});
+  if(!r.ok) throw new Error("upload "+r.status);
+  return r.json();
+}
+
+async function exportToDrive(btn){
+  if(!GOOGLE_CLIENT_ID){
+    alert("Export Drive : à configurer.\n\nCette page doit être hébergée (ton Firebase) avec un ID client OAuth Google. "+
+          "Ajoute-le dans GOOGLE_CLIENT_ID en haut du script, active l'API Drive, et l'envoi direct marchera.\n\n"+
+          "En attendant : « Tout télécharger » puis dépose dans ton dossier Drive synchronisé.");
+    return;
+  }
+  if(!driveReady()){ alert("Le service Google ne s'est pas chargé (souvent bloqué dans l'aperçu en bac à sable). Réessaie sur la version hébergée."); return; }
+  btn.disabled=true; const old=btn.textContent;
+  try{
+    btn.textContent="Connexion…";
+    await getDriveToken();
+    const folder=await findOrCreateFolder("Shiori");
+    let i=0;
+    for(const o of state.outputs){
+      i++; btn.textContent=`Envoi ${i}/${state.outputs.length}…`;
+      await uploadToDrive(o.filename,o.blob,folder);
+    }
+    btn.textContent="✓ Envoyé dans Drive/Shiori";
+  }catch(e){
+    btn.textContent=old; btn.disabled=false;
+    alert("Échec de l'envoi vers Drive : "+e.message);
+    return;
+  }
+  setTimeout(()=>{btn.disabled=false;btn.textContent=old;},4000);
+}
+
+/* ---------- UI wiring ---------- */
+function enterWorkspace(){
+  els.drop.classList.add("hidden");
+  els.workspace.classList.remove("hidden");
+  const pageTotal=state.flatPreview.length;
+  els.jobCount.textContent=`${state.jobs.length} volume${state.jobs.length>1?"s":""} · ${pageTotal} pages`;
+  renderPreview();
+}
+
+function resetAll(){
+  state.jobs=[]; state.flatPreview=[]; state.previewPos=0; state.subPos=0; state.outputs=[];
+  state.srcBitmapCache=null; state.srcBitmapKey=null;
+  els.results.innerHTML=""; els.file.value="";
+  els.prog.classList.add("hidden"); els.progFill.style.width="0";
+  els.workspace.classList.add("hidden"); els.drop.classList.remove("hidden");
+}
+
+// drop zone
+els.drop.addEventListener("click",()=>els.file.click());
+els.file.addEventListener("change",e=>handleFiles(e.target.files));
+["dragenter","dragover"].forEach(ev=>els.drop.addEventListener(ev,e=>{e.preventDefault();els.drop.classList.add("hot");}));
+["dragleave","drop"].forEach(ev=>els.drop.addEventListener(ev,e=>{e.preventDefault();els.drop.classList.remove("hot");}));
+els.drop.addEventListener("drop",e=>{if(e.dataTransfer.files.length)handleFiles(e.dataTransfer.files);});
+
+// profile
+els.profile.addEventListener("change",()=>{
+  const custom=els.profile.value==="custom";
+  els.customDims.classList.toggle("hidden",!custom);
+  const d=targetDims();
+  els.devName.textContent=els.profile.options[els.profile.selectedIndex].text.split(" — ")[0].replace("Kobo ","");
+  els.devRes.textContent=d.w+"×"+d.h;
+  schedulePreview();
+});
+[els.cw,els.ch].forEach(el=>el.addEventListener("input",()=>{const d=targetDims();els.devRes.textContent=d.w+"×"+d.h;schedulePreview();}));
+
+// toggles & sliders
+["gray","rtl","levels","trim"].forEach(k=>els[k].addEventListener("change",schedulePreview));
+function syncRotDir(){
+  const m=els.dblmode.value;
+  els.rotdirField.classList.toggle("hidden", !(m==="rotate"||m==="both"));
+}
+els.dblmode.addEventListener("change",()=>{syncRotDir();schedulePreview();});
+els.rotdir.addEventListener("change",schedulePreview);
+syncRotDir();
+els.gamma.addEventListener("input",()=>{els.gammaV.textContent=(+els.gamma.value).toFixed(2);schedulePreview();});
+els.quality.addEventListener("input",()=>{els.qualityV.textContent=els.quality.value;});
+
+// pager — walks the device-page stream (a wide planche counts as 1–3 device pages)
+function deviceCount(){
+  const b=state.srcBitmapCache;
+  if(!b) return 1;
+  const o=opts();
+  if(b.width<=b.height*1.15 || o.dblmode==="keep" || o.dblmode==="rotate") return 1;
+  return o.dblmode==="both" ? 3 : 2;
+}
+els.prev.addEventListener("click",()=>{
+  if(state.subPos>0){ state.subPos--; renderPreview(); }
+  else if(state.previewPos>0){ state.previewPos--; state.subPos=99; renderPreview(); }
+});
+els.next.addEventListener("click",()=>{
+  if(state.subPos < deviceCount()-1){ state.subPos++; renderPreview(); }
+  else if(state.previewPos<state.flatPreview.length-1){ state.previewPos++; state.subPos=0; renderPreview(); }
+});
+
+// jump to the next wide page (decodes forward, capped to keep it responsive)
+els.nextSpread.addEventListener("click",async()=>{
+  const start=state.previewPos+1, end=state.flatPreview.length;
+  els.nextSpread.disabled=true; els.nextSpread.textContent="…";
+  let found=-1;
+  for(let p=start;p<end && p<start+80;p++){
+    const {ji,pi}=state.flatPreview[p];
+    try{
+      const bmp=await blobToBitmap(state.jobs[ji].pages[pi].blob);
+      const wide=bmp.width>bmp.height*1.15;
+      if(bmp.close)bmp.close();
+      if(wide){found=p;break;}
+    }catch(e){}
+  }
+  els.nextSpread.disabled=false; els.nextSpread.textContent="⟫ planche";
+  if(found>=0){ state.previewPos=found; state.subPos=0; renderPreview(); }
+  else{ els.koboStatus.textContent="aucune planche large dans les 80 pages suivantes"; }
+});
+
+els.convert.addEventListener("click",runConvert);
+els.reset.addEventListener("click",resetAll);
+</script>
+</body>
+</html>
