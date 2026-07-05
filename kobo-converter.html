@@ -849,13 +849,18 @@ function addResult(filename, blob, pageCount){
 
 /* ---------- Google Drive export ----------
    Pour activer : héberge cette page (ton Firebase), crée un ID client OAuth
-   Google (type "Web", origine = ton domaine), active l'API Drive, et colle
-   l'ID ci-dessous. Scope drive.file = Shiori ne voit que les fichiers qu'il crée. */
+   Google (type "Web", origine = ton domaine) et active l'API Drive.
+   Pour le sélecteur visuel de dossier : active aussi l'API Google Picker et
+   crée une clé API. ID client + clé API sont collés une fois puis mémorisés.
+   Scope drive : nécessaire pour parcourir l'arborescence et écrire dans le
+   dossier que TU choisis. */
 const GOOGLE_CLIENT_ID = ""; // ex: "xxxxx.apps.googleusercontent.com"
+const DRIVE_SCOPE = "https://www.googleapis.com/auth/drive";
 let driveToken=null, driveTokenClient=null;
 
-// L'ID client peut être codé en dur ci-dessus OU collé par l'utilisateur (mémorisé).
+// ID client / clé API : codés en dur OU collés par l'utilisateur (mémorisés).
 function driveClientId(){ return GOOGLE_CLIENT_ID || localStorage.getItem("shiori_gclient") || ""; }
+function driveApiKey(){ return localStorage.getItem("shiori_gapikey") || ""; }
 
 function driveReady(){ return !!(window.google && google.accounts && google.accounts.oauth2); }
 
@@ -865,10 +870,51 @@ function ensureDriveClient(){
   if(!driveReady() || !cid) return false;
   driveTokenClient = google.accounts.oauth2.initTokenClient({
     client_id: cid,
-    scope: "https://www.googleapis.com/auth/drive.file",
+    scope: DRIVE_SCOPE,
     callback: ()=>{}, // set per-request
   });
   return true;
+}
+
+// Charge l'API Google Picker (api.js + module "picker") une seule fois.
+let pickerLoaded=null;
+function loadPicker(){
+  if(pickerLoaded) return pickerLoaded;
+  pickerLoaded=new Promise((resolve,reject)=>{
+    const s=document.createElement("script");
+    s.src="https://apis.google.com/js/api.js";
+    s.onload=()=>gapi.load("picker",{callback:resolve,onerror:()=>reject(new Error("picker"))});
+    s.onerror=()=>reject(new Error("api.js"));
+    document.head.appendChild(s);
+  });
+  return pickerLoaded;
+}
+
+// Ouvre le sélecteur de dossier Drive. Résout {id,name}, ou null si annulé.
+function pickFolder(){
+  return new Promise((resolve,reject)=>{
+    const key=driveApiKey();
+    if(!key) return reject(new Error("apikey"));
+    const view=new google.picker.DocsView(google.picker.ViewId.FOLDERS)
+      .setSelectFolderEnabled(true)
+      .setMimeTypes("application/vnd.google-apps.folder");
+    const picker=new google.picker.PickerBuilder()
+      .setOAuthToken(driveToken)
+      .setDeveloperKey(key)
+      .setTitle("Choisis le dossier de destination")
+      .addView(view)
+      .setCallback((data)=>{
+        const action=data[google.picker.Response.ACTION];
+        if(action===google.picker.Action.PICKED){
+          const doc=data[google.picker.Response.DOCUMENTS][0];
+          resolve({id:doc[google.picker.Document.ID], name:doc[google.picker.Document.NAME]});
+        }else if(action===google.picker.Action.CANCEL){
+          resolve(null);
+        }
+      })
+      .build();
+    picker.setVisible(true);
+  });
 }
 
 function getDriveToken(){
@@ -918,19 +964,39 @@ async function exportToDrive(btn){
   try{
     btn.textContent="Connexion…";
     await getDriveToken();
-    const folder=await findOrCreateFolder("Shiori");
+
+    // Choix du dossier via le sélecteur visuel (nécessite une clé API).
+    // Sans clé API : repli sur un dossier « Shiori » créé automatiquement.
+    if(!driveApiKey()){
+      const k=(prompt("Sélecteur de dossier — colle ta clé API Google.\n"+
+                      "(À créer une fois dans le même projet Google Cloud.)\n\n"+
+                      "Laisse vide pour envoyer dans un dossier « Shiori » créé automatiquement.")||"").trim();
+      if(k) localStorage.setItem("shiori_gapikey", k);
+    }
+    let folderId, folderName;
+    if(driveApiKey()){
+      btn.textContent="Choix du dossier…";
+      await loadPicker();
+      const picked=await pickFolder();
+      if(!picked){ btn.textContent=old; btn.disabled=false; return; } // annulé
+      folderId=picked.id; folderName=picked.name;
+    }else{
+      folderId=await findOrCreateFolder("Shiori"); folderName="Shiori";
+    }
+
     let i=0;
     for(const o of state.outputs){
       i++; btn.textContent=`Envoi ${i}/${state.outputs.length}…`;
-      await uploadToDrive(o.filename,o.blob,folder);
+      await uploadToDrive(o.filename,o.blob,folderId);
     }
-    btn.textContent="✓ Envoyé dans Drive/Shiori";
+    btn.textContent=`✓ Envoyé dans « ${folderName} »`;
   }catch(e){
     btn.textContent=old; btn.disabled=false;
+    if(e.message==="apikey"){ alert("Clé API manquante pour le sélecteur de dossier."); return; }
     alert("Échec de l'envoi vers Drive : "+e.message);
     return;
   }
-  setTimeout(()=>{btn.disabled=false;btn.textContent=old;},4000);
+  setTimeout(()=>{btn.disabled=false;btn.textContent=old;},5000);
 }
 
 /* ---------- UI wiring ---------- */
