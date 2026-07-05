@@ -82,7 +82,7 @@
   label.lbl{display:flex;justify-content:space-between;align-items:center;
     font-size:13.5px;font-weight:500;margin-bottom:7px}
   label.lbl .val{color:var(--ink);font-variant-numeric:tabular-nums;font-size:12.5px}
-  select,input[type=number]{width:100%;background:var(--bg);color:var(--text);
+  select,input[type=number],input[type=text]{width:100%;background:var(--bg);color:var(--text);
     border:1px solid var(--border);border-radius:9px;padding:9px 10px;font-size:13.5px;font-family:inherit}
   select:focus,input:focus{outline:2px solid var(--ink);outline-offset:1px;border-color:transparent}
   input[type=range]{width:100%;accent-color:var(--ink);margin:2px 0}
@@ -123,7 +123,7 @@
     display:flex;align-items:center;justify-content:center;
     box-shadow:inset 0 0 0 1px #000,inset 0 2px 12px -4px rgba(0,0,0,.4);
     aspect-ratio:1264/1680}
-  .kobo-screen canvas{max-width:100%;max-height:100%;display:block}
+  .kobo-screen canvas,.kobo-screen img{max-width:100%;max-height:100%;display:block}
   .kobo-screen.empty{color:#8a7f6d;font-size:12px;background:#e9e2d3}
   .kobo-status{font-size:12px;color:var(--muted);text-align:center;min-height:16px}
   .kobo-status b{color:var(--ink);font-weight:600}
@@ -214,11 +214,26 @@
           </div>
         </div>
 
-        <label class="toggle"><input type="checkbox" id="gray" checked><span class="sw"></span>
-          <span class="stack">Niveaux de gris<span class="desc">Fichiers plus légers — idéal manga N&B</span></span></label>
+        <div class="field">
+          <label class="lbl" for="colormode">Couleur</label>
+          <select id="colormode">
+            <option value="auto" selected>Auto — couleur si détectée</option>
+            <option value="gray">Tout en niveaux de gris</option>
+            <option value="color">Tout en couleur</option>
+          </select>
+        </div>
 
         <label class="toggle"><input type="checkbox" id="rtl" checked><span class="sw"></span>
           <span class="stack">Sens manga (droite → gauche)<span class="desc">Ajoute ComicInfo pour la liseuse</span></span></label>
+
+        <label class="toggle"><input type="checkbox" id="rename"><span class="sw"></span>
+          <span class="stack">Renommer automatiquement<span class="desc">Nettoie les noms (série + tome)</span></span></label>
+
+        <div class="field hidden" id="rename-field" style="margin-top:11px">
+          <label class="lbl" for="renametpl">Modèle de nom</label>
+          <input type="text" id="renametpl" value="{série} - Tome {tome}" spellcheck="false">
+          <div class="desc" id="rename-preview" style="font-size:11.5px;color:var(--muted-2);margin-top:6px"></div>
+        </div>
 
         <div class="field" style="margin:6px 0 0">
           <label class="lbl" for="dblmode">Doubles pages (planches larges)</label>
@@ -299,20 +314,20 @@
 
 /* ---------- State ---------- */
 const state = {
-  jobs: [],        // { name, pages:[{name, blob}] }
+  jobs: [],        // { name, rawName, pages:[{name, blob}] }
   flatPreview: [], // [{jobIdx, pageIdx}]
   previewPos: 0,
   subPos: 0,
+  previewCount: 1, // device-pages the current source page becomes
   outputs: [],     // converted CBZ blobs for batch actions
-  srcBitmapCache: null,
-  srcBitmapKey: null,
 };
 
 const $ = id => document.getElementById(id);
 const els = {
   drop:$("drop"), file:$("file"), workspace:$("workspace"),
   profile:$("profile"), customDims:$("custom-dims"), cw:$("cw"), ch:$("ch"),
-  gray:$("gray"), rtl:$("rtl"), dblmode:$("dblmode"), rotdir:$("rotdir"), rotdirField:$("rotdir-field"),
+  colormode:$("colormode"), rtl:$("rtl"), dblmode:$("dblmode"), rotdir:$("rotdir"), rotdirField:$("rotdir-field"),
+  rename:$("rename"), renameField:$("rename-field"), renametpl:$("renametpl"), renamePreview:$("rename-preview"),
   levels:$("levels"), trim:$("trim"),
   gamma:$("gamma"), gammaV:$("gamma-v"), quality:$("quality"), qualityV:$("quality-v"),
   prev:$("prev"), next:$("next"), pgLabel:$("pg-label"),
@@ -335,11 +350,65 @@ function opts(){
   const d=targetDims();
   return {
     tw:d.w, th:d.h,
-    gray:els.gray.checked, rtl:els.rtl.checked,
+    colorMode:els.colormode.value, rtl:els.rtl.checked,
     dblmode:els.dblmode.value, rotdir:els.rotdir.value,
     levels:els.levels.checked, trim:els.trim.checked,
     gamma:+els.gamma.value, quality:+els.quality.value/100,
   };
+}
+
+/* ---------- Réglages mémorisés (localStorage) ---------- */
+const LS_KEY="shiori_settings_v1";
+const SETTINGS_IDS=["profile","cw","ch","colormode","rtl","dblmode","rotdir","rename","renametpl","levels","trim","gamma","quality"];
+function saveSettings(){
+  try{
+    const s={};
+    for(const id of SETTINGS_IDS){ const el=$(id); if(!el)continue; s[id]=el.type==="checkbox"?el.checked:el.value; }
+    localStorage.setItem(LS_KEY, JSON.stringify(s));
+  }catch(e){}
+}
+function loadSettings(){
+  let s; try{ s=JSON.parse(localStorage.getItem(LS_KEY)||"null"); }catch(e){ s=null; }
+  if(!s) return;
+  for(const id of SETTINGS_IDS){ const el=$(id); if(!el||!(id in s))continue;
+    if(el.type==="checkbox") el.checked=!!s[id]; else el.value=s[id];
+  }
+}
+
+/* ---------- Renommage automatique ---------- */
+function parseName(raw){
+  let s=" "+String(raw).replace(/\.[a-z0-9]{2,4}$/i,"")+" ";
+  let tome=null;
+  const pats=[
+    /\b(?:vol(?:ume)?|v|t(?:ome)?)[\s._-]*(\d{1,4})\b/i,
+    /#\s*(\d{1,4})\b/,
+    /\b(\d{1,3})\s*$/,   // numéro final (limité pour éviter les années)
+  ];
+  for(const re of pats){ const m=s.match(re); if(m){ tome=parseInt(m[1],10); s=s.replace(re," "); break; } }
+  s=s.replace(/[\[\(\{][^\]\)\}]*[\]\)\}]/g," ");           // enlève [..] (..) {..}
+  s=s.replace(/[_\.]+/g," ");
+  s=s.replace(/\b(cbz|zip|cbr|pdf|digital|scan|fr|vf|vostfr)\b/ig," ");
+  s=s.replace(/[-–—:]+/g," ").replace(/\s+/g," ").trim();
+  return {series:s, tome};
+}
+function fillTemplate(tpl,series,tome){
+  const t = tome==null ? "" : String(tome).padStart(2,"0");
+  let out=tpl.replace(/\{s[ée]rie\}/gi,series).replace(/\{serie\}/gi,series)
+             .replace(/\{tome\}/gi,t).replace(/\{num\}/gi,t);
+  if(tome==null) out=out.replace(/\s*[-–—:]\s*Tome\s*$/i,"").replace(/\s*[-–—:]\s*$/,"");
+  out=out.replace(/\s+/g," ").trim();
+  return out || series || "manga";
+}
+function outputBaseName(job){
+  if(!els.rename.checked) return job.name;
+  const {series,tome}=parseName(job.rawName||job.name);
+  return fillTemplate(els.renametpl.value||"{série} - Tome {tome}", series, tome);
+}
+function updateRenamePreview(){
+  els.renameField.classList.toggle("hidden", !els.rename.checked);
+  if(!els.rename.checked || !state.jobs.length){ els.renamePreview.textContent=""; return; }
+  const j=state.jobs[0];
+  els.renamePreview.textContent = `Ex. : ${j.rawName||j.name} → ${outputBaseName(j)}`;
 }
 
 /* ---------- Natural sort ---------- */
@@ -352,32 +421,40 @@ function isJunk(name){
   return name.includes("__MACOSX") || base.startsWith(".") || name.endsWith("/");
 }
 
-/* ---------- Loading files ---------- */
+/* ---------- Chargement des fichiers (paresseux) ----------
+   Crucial pour les gros imports : on n'extrait PAS toutes les images en mémoire.
+   On lit seulement la liste des pages de chaque archive puis on garde le fichier ;
+   les images sont décompressées à la volée (aperçu + conversion). Ça permet des
+   dizaines de tomes lourds sans saturer la RAM. */
 async function handleFiles(fileList){
   const files=[...fileList];
-  const archives=files.filter(f=>/\.(cbz|zip)$/i.test(f.name));
+  const archives=files.filter(f=>/\.(cbz|zip)$/i.test(f.name)).sort((a,b)=>natSort(a.name,b.name));
   const loose=files.filter(f=>f.type.startsWith("image/")||IMG_RE.test(f.name));
+  let failed=0;
 
   for(const arc of archives){
     try{
       const zip=await JSZip.loadAsync(arc);
-      const entries=Object.values(zip.files)
-        .filter(e=>!e.dir && IMG_RE.test(e.name) && !isJunk(e.name))
-        .sort((x,y)=>natSort(x.name,y.name));
-      const pages=[];
-      for(const e of entries){
-        pages.push({name:e.name.split("/").pop(), blob:await e.async("blob")});
+      const names=Object.keys(zip.files)
+        .filter(n=>!zip.files[n].dir && IMG_RE.test(n) && !isJunk(n))
+        .sort(natSort);
+      if(names.length){
+        const base=cleanName(arc.name);
+        state.jobs.push({ name:base, rawName:base, file:arc, pageNames:names,
+          pages:names.map(n=>({name:n.split("/").pop()})) });
       }
-      if(pages.length) state.jobs.push({name:cleanName(arc.name), pages});
-    }catch(err){ console.error("zip fail",arc.name,err); }
+      // zip hors scope à l'itération suivante ⇒ mémoire libérée avant l'archive d'après
+    }catch(err){ failed++; console.error("zip fail",arc.name,err); }
   }
 
   if(loose.length){
-    const pages=loose.sort((a,b)=>natSort(a.name,b.name)).map(f=>({name:f.name,blob:f}));
-    state.jobs.push({name:"images", pages});
+    const sorted=loose.sort((a,b)=>natSort(a.name,b.name));
+    state.jobs.push({ name:"images", rawName:"images", file:null,
+      pages:sorted.map(f=>({name:f.name, blob:f})) });
   }
 
   if(!state.jobs.length){ alert("Aucune image trouvée dans les fichiers déposés."); return; }
+  if(failed) alert(failed+" archive(s) illisibles (corrompues ?) ont été ignorées. Les autres sont bien chargées.");
   buildPreviewIndex();
   enterWorkspace();
 }
@@ -389,225 +466,311 @@ function buildPreviewIndex(){
   state.previewPos=0;
 }
 
-/* ---------- Image processing core ---------- */
-async function blobToBitmap(blob){
-  if("createImageBitmap" in window){
-    try{ return await createImageBitmap(blob); }catch(e){}
-  }
-  return await new Promise((res,rej)=>{
-    const img=new Image(); const url=URL.createObjectURL(blob);
-    img.onload=()=>{URL.revokeObjectURL(url);res(img);};
-    img.onerror=e=>{URL.revokeObjectURL(url);rej(e);};
-    img.src=url;
-  });
+/* ---------- Accès paresseux aux pages (une archive ouverte à la fois) ---------- */
+let openZip={ji:-1, zip:null};
+async function getZipFor(ji){
+  if(openZip.ji===ji && openZip.zip) return openZip.zip;
+  const zip=await JSZip.loadAsync(state.jobs[ji].file);
+  openZip={ji, zip};   // remplace la précédente ⇒ l'ancienne est libérée
+  return zip;
 }
-
-// Returns array of canvases (1, 2, or 3 depending on the double-page mode)
-function processBitmap(bmp, o){
-  const isSpread = bmp.width > bmp.height*1.15;
-  if(!isSpread || o.dblmode==="keep"){
-    return [renderRegion(bmp,0,0,bmp.width,bmp.height,o)];
-  }
-  const cw = o.rotdir==="cw";
-  const rotated = ()=>renderRotated(bmp, fullOrTrim(bmp,o), o, cw);
-  const halfW = Math.floor(bmp.width/2);
-  const splitPages = ()=>{
-    const left = renderRegion(bmp,0,0,halfW,bmp.height,o);
-    const right = renderRegion(bmp,halfW,0,bmp.width-halfW,bmp.height,o);
-    return o.rtl ? [right,left] : [left,right]; // manga: right page first
-  };
-  if(o.dblmode==="rotate") return [rotated()];
-  if(o.dblmode==="split")  return splitPages();
-  return [rotated(), ...splitPages()]; // "both": full spread, then each half
+async function getPageBlob(ji,pi){
+  const job=state.jobs[ji], page=job.pages[pi];
+  if(page.blob) return page.blob;                 // image en vrac (File)
+  const zip=await getZipFor(ji);
+  return zip.file(job.pageNames[pi]).async("blob");
 }
+function releaseZip(){ openZip={ji:-1, zip:null}; }
 
-function fullOrTrim(bmp,o){
-  return o.trim ? trimBox(bmp,0,0,bmp.width,bmp.height) : {sx:0,sy:0,sw:bmp.width,sh:bmp.height};
-}
+/* ---------- Image processing core ----------
+   Défini une seule fois, réutilisé tel quel dans un Web Worker (via toString)
+   et sur le thread principal en secours. Doit rester autonome : aucune référence
+   à l'extérieur de ses paramètres (makeCanvas, toBlob). */
+function buildProcessor(makeCanvas, toBlob){
+  const clamp=(n,a,b)=>Math.max(a,Math.min(b,isNaN(n)?a:n));
 
-// Rotate a (sub-)region 90° to fill the portrait target, then apply pixel ops
-function renderRotated(bmp, box, o, clockwise){
-  const scale = Math.min(o.tw/box.sh, o.th/box.sw); // dims swap after rotation
-  const dw = Math.max(1,Math.round(box.sh*scale));  // rotated width  = source height
-  const dh = Math.max(1,Math.round(box.sw*scale));  // rotated height = source width
-  const cv = document.createElement("canvas");
-  cv.width=dw; cv.height=dh;
-  const ctx=cv.getContext("2d");
-  ctx.imageSmoothingQuality="high";
-  ctx.save();
-  if(clockwise){ ctx.translate(dw,0); ctx.rotate(Math.PI/2); }
-  else{ ctx.translate(0,dh); ctx.rotate(-Math.PI/2); }
-  ctx.drawImage(bmp, box.sx,box.sy,box.sw,box.sh, 0,0, dh, dw);
-  ctx.restore();
-  applyPixelOps(ctx,dw,dh,o);
-  return cv;
-}
-
-function renderRegion(bmp,sx,sy,sw,sh,o){
-  // optional margin trim (on the source region)
-  let box={sx,sy,sw,sh};
-  if(o.trim){ box=trimBox(bmp,sx,sy,sw,sh); }
-
-  // scale to fit target while preserving aspect (contain), no upscaling beyond 1.5x
-  const scale=Math.min(o.tw/box.sw, o.th/box.sh);
-  const dw=Math.max(1,Math.round(box.sw*scale));
-  const dh=Math.max(1,Math.round(box.sh*scale));
-
-  const cv=document.createElement("canvas");
-  cv.width=dw; cv.height=dh;
-  const ctx=cv.getContext("2d");
-  ctx.imageSmoothingQuality="high";
-  ctx.drawImage(bmp,box.sx,box.sy,box.sw,box.sh,0,0,dw,dh);
-
-  applyPixelOps(ctx,dw,dh,o);
-  return cv;
-}
-
-function trimBox(bmp,sx,sy,sw,sh){
-  // sample on a downscaled copy for speed
-  const SAMP=Math.min(900, Math.max(sw,sh));
-  const s=SAMP/Math.max(sw,sh);
-  const w=Math.max(1,Math.round(sw*s)), h=Math.max(1,Math.round(sh*s));
-  const c=document.createElement("canvas"); c.width=w;c.height=h;
-  const cx=c.getContext("2d",{willReadFrequently:true});
-  cx.drawImage(bmp,sx,sy,sw,sh,0,0,w,h);
-  const d=cx.getImageData(0,0,w,h).data;
-  const TH=238; // near-white threshold
-  let top=0,bottom=h-1,left=0,right=w-1;
-  const rowWhite=y=>{for(let x=0;x<w;x++){const i=(y*w+x)*4;if(d[i]<TH||d[i+1]<TH||d[i+2]<TH)return false;}return true;};
-  const colWhite=x=>{for(let y=0;y<h;y++){const i=(y*w+x)*4;if(d[i]<TH||d[i+1]<TH||d[i+2]<TH)return false;}return true;};
-  while(top<bottom&&rowWhite(top))top++;
-  while(bottom>top&&rowWhite(bottom))bottom--;
-  while(left<right&&colWhite(left))left++;
-  while(right>left&&colWhite(right))right--;
-  // small padding back, map to source coords
-  const pad=Math.round(4/s);
-  const nx=sx+Math.max(0,left/s-pad), ny=sy+Math.max(0,top/s-pad);
-  const nw=Math.min(sw-(nx-sx),(right-left+1)/s+pad*2);
-  const nh=Math.min(sh-(ny-sy),(bottom-top+1)/s+pad*2);
-  if(nw<sw*0.3||nh<sh*0.3) return {sx,sy,sw,sh}; // bail if trim looks wrong
-  return {sx:nx,sy:ny,sw:nw,sh:nh};
-}
-
-function applyPixelOps(ctx,w,h,o){
-  if(!o.gray && o.gamma===1 && !o.levels) return;
-  const img=ctx.getImageData(0,0,w,h);
-  const d=img.data;
-  // gamma LUT
-  const gl=new Uint8Array(256);
-  for(let i=0;i<256;i++) gl[i]=Math.round(255*Math.pow(i/255,1/o.gamma));
-  // first pass: grayscale + gamma, track min/max for levels
-  let mn=255,mx=0;
-  for(let i=0;i<d.length;i+=4){
-    let r=d[i],g=d[i+1],b=d[i+2];
-    if(o.gray){
-      const y=(r*0.299+g*0.587+b*0.114)|0;
-      r=g=b=y;
+  // Auto : la page a-t-elle assez de couleur pour être gardée en couleur ?
+  function decideGray(bmp,o){
+    if(o.colorMode==="gray") return true;
+    if(o.colorMode==="color") return false;
+    const S=200, s=S/Math.max(bmp.width,bmp.height);
+    const w=Math.max(1,Math.round(bmp.width*s)), h=Math.max(1,Math.round(bmp.height*s));
+    const c=makeCanvas(w,h), cx=c.getContext("2d",{willReadFrequently:true});
+    cx.drawImage(bmp,0,0,w,h);
+    const d=cx.getImageData(0,0,w,h).data;
+    let colored=0,total=0;
+    for(let i=0;i<d.length;i+=4){
+      const r=d[i],g=d[i+1],b=d[i+2];
+      const mx=Math.max(r,g,b), mn=Math.min(r,g,b);
+      if(mx>18){ total++; if(mx-mn>26) colored++; }
     }
-    r=gl[r];g=gl[g];b=gl[b];
-    d[i]=r;d[i+1]=g;d[i+2]=b;
-    if(o.levels){
-      const l=o.gray?r:(r*0.299+g*0.587+b*0.114)|0;
-      if(l<mn)mn=l; if(l>mx)mx=l;
+    const frac = total ? colored/total : 0;
+    return frac < 0.035; // < 3,5 % de pixels colorés ⇒ traiter en N&B
+  }
+
+  function trimBox(bmp,sx,sy,sw,sh){
+    const SAMP=Math.min(900, Math.max(sw,sh));
+    const s=SAMP/Math.max(sw,sh);
+    const w=Math.max(1,Math.round(sw*s)), h=Math.max(1,Math.round(sh*s));
+    const c=makeCanvas(w,h), cx=c.getContext("2d",{willReadFrequently:true});
+    cx.drawImage(bmp,sx,sy,sw,sh,0,0,w,h);
+    const d=cx.getImageData(0,0,w,h).data;
+    const TH=238;
+    let top=0,bottom=h-1,left=0,right=w-1;
+    const rowWhite=y=>{for(let x=0;x<w;x++){const i=(y*w+x)*4;if(d[i]<TH||d[i+1]<TH||d[i+2]<TH)return false;}return true;};
+    const colWhite=x=>{for(let y=0;y<h;y++){const i=(y*w+x)*4;if(d[i]<TH||d[i+1]<TH||d[i+2]<TH)return false;}return true;};
+    while(top<bottom&&rowWhite(top))top++;
+    while(bottom>top&&rowWhite(bottom))bottom--;
+    while(left<right&&colWhite(left))left++;
+    while(right>left&&colWhite(right))right--;
+    const pad=Math.round(4/s);
+    const nx=sx+Math.max(0,left/s-pad), ny=sy+Math.max(0,top/s-pad);
+    const nw=Math.min(sw-(nx-sx),(right-left+1)/s+pad*2);
+    const nh=Math.min(sh-(ny-sy),(bottom-top+1)/s+pad*2);
+    if(nw<sw*0.3||nh<sh*0.3) return {sx,sy,sw,sh};
+    return {sx:nx,sy:ny,sw:nw,sh:nh};
+  }
+
+  function applyPixelOps(ctx,w,h,o){
+    if(!o.gray && o.gamma===1 && !o.levels) return;
+    const img=ctx.getImageData(0,0,w,h), d=img.data;
+    const gl=new Uint8Array(256);
+    for(let i=0;i<256;i++) gl[i]=Math.round(255*Math.pow(i/255,1/o.gamma));
+    let mn=255,mx=0;
+    for(let i=0;i<d.length;i+=4){
+      let r=d[i],g=d[i+1],b=d[i+2];
+      if(o.gray){ const y=(r*0.299+g*0.587+b*0.114)|0; r=g=b=y; }
+      r=gl[r];g=gl[g];b=gl[b];
+      d[i]=r;d[i+1]=g;d[i+2]=b;
+      if(o.levels){ const l=o.gray?r:(r*0.299+g*0.587+b*0.114)|0; if(l<mn)mn=l; if(l>mx)mx=l; }
     }
+    if(o.levels && mx>mn){
+      const range=mx-mn, ll=new Uint8Array(256);
+      for(let i=0;i<256;i++) ll[i]=clamp(Math.round((i-mn)/range*255),0,255);
+      for(let i=0;i<d.length;i+=4){ d[i]=ll[d[i]];d[i+1]=ll[d[i+1]];d[i+2]=ll[d[i+2]]; }
+    }
+    ctx.putImageData(img,0,0);
   }
-  if(o.levels && mx>mn){
-    const range=mx-mn;
-    const ll=new Uint8Array(256);
-    for(let i=0;i<256;i++) ll[i]=clamp(Math.round((i-mn)/range*255),0,255);
-    for(let i=0;i<d.length;i+=4){ d[i]=ll[d[i]];d[i+1]=ll[d[i+1]];d[i+2]=ll[d[i+2]]; }
+
+  function renderRegion(bmp,sx,sy,sw,sh,o){
+    let box={sx,sy,sw,sh};
+    if(o.trim) box=trimBox(bmp,sx,sy,sw,sh);
+    const scale=Math.min(o.tw/box.sw, o.th/box.sh);
+    const dw=Math.max(1,Math.round(box.sw*scale)), dh=Math.max(1,Math.round(box.sh*scale));
+    const cv=makeCanvas(dw,dh), ctx=cv.getContext("2d");
+    ctx.imageSmoothingQuality="high";
+    ctx.drawImage(bmp,box.sx,box.sy,box.sw,box.sh,0,0,dw,dh);
+    applyPixelOps(ctx,dw,dh,o);
+    return cv;
   }
-  ctx.putImageData(img,0,0);
+
+  function fullOrTrim(bmp,o){
+    return o.trim ? trimBox(bmp,0,0,bmp.width,bmp.height) : {sx:0,sy:0,sw:bmp.width,sh:bmp.height};
+  }
+
+  // Pivote une (sous-)région de 90° pour remplir la cible portrait
+  function renderRotated(bmp,box,o,clockwise){
+    const scale=Math.min(o.tw/box.sh, o.th/box.sw);
+    const dw=Math.max(1,Math.round(box.sh*scale)), dh=Math.max(1,Math.round(box.sw*scale));
+    const cv=makeCanvas(dw,dh), ctx=cv.getContext("2d");
+    ctx.imageSmoothingQuality="high";
+    ctx.save();
+    if(clockwise){ ctx.translate(dw,0); ctx.rotate(Math.PI/2); }
+    else{ ctx.translate(0,dh); ctx.rotate(-Math.PI/2); }
+    ctx.drawImage(bmp,box.sx,box.sy,box.sw,box.sh,0,0,dh,dw);
+    ctx.restore();
+    applyPixelOps(ctx,dw,dh,o);
+    return cv;
+  }
+
+  // Renvoie 1, 2 ou 3 canvases selon le mode double-page
+  function processBitmap(bmp,o){
+    const isSpread=bmp.width>bmp.height*1.15;
+    if(!isSpread || o.dblmode==="keep") return [renderRegion(bmp,0,0,bmp.width,bmp.height,o)];
+    const cw=o.rotdir==="cw";
+    const rotated=()=>renderRotated(bmp,fullOrTrim(bmp,o),o,cw);
+    const halfW=Math.floor(bmp.width/2);
+    const splitPages=()=>{
+      const left=renderRegion(bmp,0,0,halfW,bmp.height,o);
+      const right=renderRegion(bmp,halfW,0,bmp.width-halfW,bmp.height,o);
+      return o.rtl ? [right,left] : [left,right]; // manga : page de droite d'abord
+    };
+    if(o.dblmode==="rotate") return [rotated()];
+    if(o.dblmode==="split")  return splitPages();
+    return [rotated(), ...splitPages()];
+  }
+
+  // blob source → { blobs JPEG, count, isSpread, gray }
+  async function processToBlobs(blob,o){
+    const bmp=await createImageBitmap(blob);
+    const gray=decideGray(bmp,o);
+    const o2=Object.assign({},o,{gray});
+    const isSpread=bmp.width>bmp.height*1.15;
+    const canvases=processBitmap(bmp,o2);
+    const blobs=[];
+    for(const cv of canvases) blobs.push(await toBlob(cv,o.quality));
+    if(bmp.close) bmp.close();
+    return {blobs, count:canvases.length, isSpread, gray};
+  }
+
+  return { processToBlobs };
 }
 
-function canvasToBlob(cv,quality){
-  return new Promise(res=>cv.toBlob(b=>res(b),"image/jpeg",quality));
-}
+/* ---------- Worker pool (garde l'interface fluide pendant la conversion) ---------- */
+const WORKER_SRC =
+  "const makeCanvas=(w,h)=>new OffscreenCanvas(w,h);"+
+  "const toBlob=(cv,q)=>cv.convertToBlob({type:'image/jpeg',quality:q});"+
+  "const buildProcessor="+buildProcessor.toString()+";"+
+  "const api=buildProcessor(makeCanvas,toBlob);"+
+  "onmessage=async(e)=>{const{id,blob,o}=e.data;"+
+  "try{const r=await api.processToBlobs(blob,o);postMessage({id,ok:true,r});}"+
+  "catch(err){postMessage({id,ok:false,err:String(err&&err.message||err)});}};";
+
+const canUseWorker = (typeof Worker!=="undefined") && (typeof OffscreenCanvas!=="undefined")
+  && OffscreenCanvas.prototype.convertToBlob && (typeof createImageBitmap!=="undefined");
+
+const processor = (function(){
+  if(canUseWorker){
+    let url=null;
+    try{ url=URL.createObjectURL(new Blob([WORKER_SRC],{type:"text/javascript"})); }catch(e){}
+    if(url){
+      const size=Math.max(1,Math.min(4,navigator.hardwareConcurrency||2));
+      const idle=[], queue=[], pending=new Map(); let seq=0;
+      const pump=()=>{
+        while(idle.length && queue.length){
+          const w=idle.shift(), task=queue.shift();
+          pending.set(task.id,task);
+          w.postMessage({id:task.id, blob:task.blob, o:task.o});
+        }
+      };
+      for(let i=0;i<size;i++){
+        const w=new Worker(url);
+        w.onmessage=(e)=>{
+          const {id,ok,r,err}=e.data, p=pending.get(id);
+          if(p){ pending.delete(id); ok?p.resolve(r):p.reject(new Error(err)); }
+          idle.push(w); pump();
+        };
+        idle.push(w);
+      }
+      return { run:(blob,o)=>new Promise((resolve,reject)=>{ queue.push({id:++seq,blob,o,resolve,reject}); pump(); }) };
+    }
+  }
+  // Secours : traitement sur le thread principal (peut figer brièvement l'UI).
+  const makeCanvas=(w,h)=>{ const c=document.createElement("canvas"); c.width=w; c.height=h; return c; };
+  const toBlob=(cv,q)=>new Promise(res=>cv.toBlob(b=>res(b),"image/jpeg",q));
+  const api=buildProcessor(makeCanvas,toBlob);
+  return { run:(blob,o)=>api.processToBlobs(blob,o) };
+})();
 
 /* ---------- Preview ---------- */
 let pvTimer=null;
 function schedulePreview(){clearTimeout(pvTimer);pvTimer=setTimeout(renderPreview,140);}
+let pvToken=0, pvUrl=null;
 
 async function renderPreview(){
   if(!state.flatPreview.length)return;
   const {ji,pi}=state.flatPreview[state.previewPos];
-  const job=state.jobs[ji]; const page=job.pages[pi];
   const o=opts();
   els.rtlInd.classList.toggle("hidden",!o.rtl);
-
-  // match the screen aspect to the selected device
   els.koboScreen.style.aspectRatio=`${o.tw}/${o.th}`;
 
-  // decode source (cache by page identity)
-  const key=ji+":"+pi;
-  if(state.srcBitmapKey!==key){
-    try{ state.srcBitmapCache=await blobToBitmap(page.blob); state.srcBitmapKey=key; }
-    catch(e){ els.koboScreen.textContent="image illisible"; return; }
+  const token=++pvToken;
+  let res;
+  try{
+    const blob=await getPageBlob(ji,pi);
+    res=await processor.run(blob,o);
+  }catch(e){
+    if(token===pvToken){ els.koboScreen.classList.add("empty"); els.koboScreen.textContent="image illisible"; }
+    return;
   }
-  const bmp=state.srcBitmapCache;
-  const isSpread=bmp.width>bmp.height*1.15;
+  if(token!==pvToken) return; // un aperçu plus récent a pris la main
 
-  // the device pages this source page becomes, under current settings
-  const outs=processBitmap(bmp,o);
-  if(state.subPos>=outs.length) state.subPos=outs.length-1;
+  state.previewCount=res.count;
+  if(state.subPos>=res.count) state.subPos=res.count-1;
   if(state.subPos<0) state.subPos=0;
 
-  // render the current device page onto the Kobo screen
-  els.koboScreen.classList.remove("empty"); els.koboScreen.innerHTML="";
-  els.koboScreen.appendChild(outs[state.subPos]);
+  const url=URL.createObjectURL(res.blobs[state.subPos]);
+  const img=new Image();
+  img.onload=()=>{
+    if(token!==pvToken){ URL.revokeObjectURL(url); return; }
+    els.koboScreen.classList.remove("empty"); els.koboScreen.innerHTML=""; els.koboScreen.appendChild(img);
+    if(pvUrl) URL.revokeObjectURL(pvUrl); pvUrl=url;
+  };
+  img.src=url;
 
-  // labels
-  const sub = outs.length>1 ? ` · vue ${state.subPos+1}/${outs.length}` : "";
+  const sub = res.count>1 ? ` · vue ${state.subPos+1}/${res.count}` : "";
   els.pgLabel.textContent=`p.${state.previewPos+1}/${state.flatPreview.length}${sub}`;
-  els.koboStatus.innerHTML = deviceLabel(o,isSpread,outs.length,state.subPos);
+  els.koboStatus.innerHTML = deviceLabel(o,res.isSpread,res.count,state.subPos,res.gray);
 }
 
-function deviceLabel(o,isSpread,n,sub){
-  if(!isSpread || o.dblmode==="keep") return `${o.tw}×${o.th} — page simple`;
-  if(o.dblmode==="rotate") return `<b>planche large</b> → pivotée en paysage`;
-  if(o.dblmode==="split")  return `<b>planche large</b> → moitié ${sub+1}/2`;
-  // both
-  return sub===0 ? `<b>planche large</b> → vue paysage` : `<b>planche large</b> → moitié ${sub}/2`;
+function deviceLabel(o,isSpread,n,sub,gray){
+  const tone = o.colorMode==="auto" ? (gray?" · gris":" · couleur")
+            : (o.colorMode==="color" ? " · couleur" : " · gris");
+  if(!isSpread || o.dblmode==="keep") return `${o.tw}×${o.th}${tone} — page simple`;
+  if(o.dblmode==="rotate") return `<b>planche large</b> → pivotée en paysage${tone}`;
+  if(o.dblmode==="split")  return `<b>planche large</b> → moitié ${sub+1}/2${tone}`;
+  return sub===0 ? `<b>planche large</b> → vue paysage${tone}` : `<b>planche large</b> → moitié ${sub}/2${tone}`;
 }
 
 /* ---------- Convert ---------- */
+// Traite `items` avec au plus `limit` opérations en vol (borne la mémoire),
+// tout en conservant l'ordre des résultats.
+async function mapLimit(items, limit, fn){
+  const results=new Array(items.length);
+  let i=0;
+  async function runner(){ while(i<items.length){ const idx=i++; results[idx]=await fn(items[idx],idx); } }
+  const n=Math.max(1, Math.min(limit, items.length));
+  await Promise.all(Array.from({length:n}, runner));
+  return results;
+}
+
 async function runConvert(){
   els.convert.disabled=true; els.reset.disabled=true;
   els.prog.classList.remove("hidden");
   els.results.innerHTML="";
   state.outputs=[];
+  releaseZip(); // libère l'archive de l'aperçu avant de charger la mémoire
   const o=opts();
   const total=state.flatPreview.length;
-  let done=0;
   const nJobs=state.jobs.length;
+  const CONC=Math.max(1, Math.min(4, navigator.hardwareConcurrency||2));
+  let done=0;
+  const tick=(j,job)=>{ done++;
+    els.progFill.style.width=Math.round(done/total*100)+"%";
+    els.progTxt.textContent=`Tome ${j+1}/${nJobs} · ${job.name} — ${done}/${total} pages`;
+  };
 
   for(let j=0;j<nJobs;j++){
     const job=state.jobs[j];
     const zip=new JSZip();
-    let outIdx=1, outCount=0;
     const pad=String(job.pages.length*2).length;
-    for(const page of job.pages){
-      let bmp;
-      try{ bmp=await blobToBitmap(page.blob); }
-      catch(e){ done++; continue; }
-      const canvases=processBitmap(bmp,o);
-      for(const cv of canvases){
-        const blob=await canvasToBlob(cv,o.quality);
-        zip.file(String(outIdx).padStart(pad,"0")+".jpg", blob);
-        outIdx++; outCount++;
-      }
-      if(bmp.close) bmp.close();
-      done++;
-      const pct=Math.round(done/total*100);
-      els.progFill.style.width=pct+"%";
-      els.progTxt.textContent=`Tome ${j+1}/${nJobs} · ${job.name} — ${done}/${total} pages`;
-      await new Promise(r=>setTimeout(r,0)); // yield to UI
+    let src=null;
+    try{ if(job.file) src=await JSZip.loadAsync(job.file); }
+    catch(e){ console.error("open fail",job.name,e); }
+
+    // extraction + traitement page par page (bornés par CONC), dans l'ordre
+    const perPage=await mapLimit(job.pages, CONC, async (page,pi)=>{
+      let blob;
+      try{ blob = job.file ? await src.file(job.pageNames[pi]).async("blob") : page.blob; }
+      catch(e){ tick(j,job); return []; }
+      let r; try{ r=await processor.run(blob,o); }catch(e){ tick(j,job); return []; }
+      tick(j,job);
+      return r.blobs;
+    });
+    src=null; // libère l'archive source
+
+    let outIdx=1, outCount=0;
+    for(const blobs of perPage) for(const b of blobs){
+      zip.file(String(outIdx).padStart(pad,"0")+".jpg", b); outIdx++; outCount++;
     }
-    if(o.rtl) zip.file("ComicInfo.xml", comicInfoXML(job.name, outCount));
+
+    const base=outputBaseName(job);
+    if(o.rtl) zip.file("ComicInfo.xml", comicInfoXML(base, outCount));
     const cbz=await zip.generateAsync({type:"blob",compression:"STORE"});
-    const filename=job.name+" (Kobo).cbz";
+    const filename=base+" (Kobo).cbz";
     state.outputs.push({filename, blob:cbz, pageCount:outCount});
     addResult(filename, cbz, outCount);
+    await new Promise(r=>setTimeout(r,0)); // laisse respirer le GC entre les tomes
   }
   els.progTxt.textContent=`Terminé ✓ — ${nJobs} tome${nJobs>1?"s":""}`;
   els.progFill.style.width="100%";
@@ -681,13 +844,17 @@ function addResult(filename, blob, pageCount){
 const GOOGLE_CLIENT_ID = ""; // ex: "xxxxx.apps.googleusercontent.com"
 let driveToken=null, driveTokenClient=null;
 
+// L'ID client peut être codé en dur ci-dessus OU collé par l'utilisateur (mémorisé).
+function driveClientId(){ return GOOGLE_CLIENT_ID || localStorage.getItem("shiori_gclient") || ""; }
+
 function driveReady(){ return !!(window.google && google.accounts && google.accounts.oauth2); }
 
 function ensureDriveClient(){
   if(driveTokenClient) return true;
-  if(!driveReady() || !GOOGLE_CLIENT_ID) return false;
+  const cid=driveClientId();
+  if(!driveReady() || !cid) return false;
   driveTokenClient = google.accounts.oauth2.initTokenClient({
-    client_id: GOOGLE_CLIENT_ID,
+    client_id: cid,
     scope: "https://www.googleapis.com/auth/drive.file",
     callback: ()=>{}, // set per-request
   });
@@ -729,11 +896,12 @@ async function uploadToDrive(name,blob,folderId){
 }
 
 async function exportToDrive(btn){
-  if(!GOOGLE_CLIENT_ID){
-    alert("Export Drive : à configurer.\n\nCette page doit être hébergée (ton Firebase) avec un ID client OAuth Google. "+
-          "Ajoute-le dans GOOGLE_CLIENT_ID en haut du script, active l'API Drive, et l'envoi direct marchera.\n\n"+
-          "En attendant : « Tout télécharger » puis dépose dans ton dossier Drive synchronisé.");
-    return;
+  if(!driveClientId()){
+    const cid=(prompt("Export Drive — colle ton ID client OAuth Google\n(…apps.googleusercontent.com).\n\n"+
+                      "À créer une seule fois (voir DEPLOY.md). Il sera mémorisé dans ce navigateur.\n"+
+                      "En attendant tu peux utiliser « Tout télécharger ».")||"").trim();
+    if(!cid) return;
+    localStorage.setItem("shiori_gclient", cid);
   }
   if(!driveReady()){ alert("Le service Google ne s'est pas chargé (souvent bloqué dans l'aperçu en bac à sable). Réessaie sur la version hébergée."); return; }
   btn.disabled=true; const old=btn.textContent;
@@ -761,12 +929,14 @@ function enterWorkspace(){
   els.workspace.classList.remove("hidden");
   const pageTotal=state.flatPreview.length;
   els.jobCount.textContent=`${state.jobs.length} volume${state.jobs.length>1?"s":""} · ${pageTotal} pages`;
+  updateRenamePreview();
   renderPreview();
 }
 
 function resetAll(){
-  state.jobs=[]; state.flatPreview=[]; state.previewPos=0; state.subPos=0; state.outputs=[];
-  state.srcBitmapCache=null; state.srcBitmapKey=null;
+  state.jobs=[]; state.flatPreview=[]; state.previewPos=0; state.subPos=0; state.previewCount=1; state.outputs=[];
+  releaseZip();
+  if(pvUrl){ URL.revokeObjectURL(pvUrl); pvUrl=null; }
   els.results.innerHTML=""; els.file.value="";
   els.prog.classList.add("hidden"); els.progFill.style.width="0";
   els.workspace.classList.add("hidden"); els.drop.classList.remove("hidden");
@@ -779,43 +949,45 @@ els.file.addEventListener("change",e=>handleFiles(e.target.files));
 ["dragleave","drop"].forEach(ev=>els.drop.addEventListener(ev,e=>{e.preventDefault();els.drop.classList.remove("hot");}));
 els.drop.addEventListener("drop",e=>{if(e.dataTransfer.files.length)handleFiles(e.dataTransfer.files);});
 
-// profile
-els.profile.addEventListener("change",()=>{
-  const custom=els.profile.value==="custom";
-  els.customDims.classList.toggle("hidden",!custom);
+// device profile
+function syncDevice(){
   const d=targetDims();
   els.devName.textContent=els.profile.options[els.profile.selectedIndex].text.split(" — ")[0].replace("Kobo ","");
   els.devRes.textContent=d.w+"×"+d.h;
-  schedulePreview();
+}
+els.profile.addEventListener("change",()=>{
+  els.customDims.classList.toggle("hidden", els.profile.value!=="custom");
+  syncDevice(); schedulePreview();
 });
-[els.cw,els.ch].forEach(el=>el.addEventListener("input",()=>{const d=targetDims();els.devRes.textContent=d.w+"×"+d.h;schedulePreview();}));
+[els.cw,els.ch].forEach(el=>el.addEventListener("input",()=>{ syncDevice(); schedulePreview(); }));
 
-// toggles & sliders
-["gray","rtl","levels","trim"].forEach(k=>els[k].addEventListener("change",schedulePreview));
+// colour / toggles / sliders
+els.colormode.addEventListener("change",schedulePreview);
+["rtl","levels","trim"].forEach(k=>els[k].addEventListener("change",schedulePreview));
 function syncRotDir(){
   const m=els.dblmode.value;
   els.rotdirField.classList.toggle("hidden", !(m==="rotate"||m==="both"));
 }
 els.dblmode.addEventListener("change",()=>{syncRotDir();schedulePreview();});
 els.rotdir.addEventListener("change",schedulePreview);
-syncRotDir();
 els.gamma.addEventListener("input",()=>{els.gammaV.textContent=(+els.gamma.value).toFixed(2);schedulePreview();});
 els.quality.addEventListener("input",()=>{els.qualityV.textContent=els.quality.value;});
 
+// auto-rename
+els.rename.addEventListener("change",updateRenamePreview);
+els.renametpl.addEventListener("input",updateRenamePreview);
+
+// persist every setting change
+$("settings").addEventListener("input", saveSettings);
+$("settings").addEventListener("change", saveSettings);
+
 // pager — walks the device-page stream (a wide planche counts as 1–3 device pages)
-function deviceCount(){
-  const b=state.srcBitmapCache;
-  if(!b) return 1;
-  const o=opts();
-  if(b.width<=b.height*1.15 || o.dblmode==="keep" || o.dblmode==="rotate") return 1;
-  return o.dblmode==="both" ? 3 : 2;
-}
 els.prev.addEventListener("click",()=>{
   if(state.subPos>0){ state.subPos--; renderPreview(); }
   else if(state.previewPos>0){ state.previewPos--; state.subPos=99; renderPreview(); }
 });
 els.next.addEventListener("click",()=>{
-  if(state.subPos < deviceCount()-1){ state.subPos++; renderPreview(); }
+  if(state.subPos < (state.previewCount||1)-1){ state.subPos++; renderPreview(); }
   else if(state.previewPos<state.flatPreview.length-1){ state.previewPos++; state.subPos=0; renderPreview(); }
 });
 
@@ -827,7 +999,8 @@ els.nextSpread.addEventListener("click",async()=>{
   for(let p=start;p<end && p<start+80;p++){
     const {ji,pi}=state.flatPreview[p];
     try{
-      const bmp=await blobToBitmap(state.jobs[ji].pages[pi].blob);
+      const blob=await getPageBlob(ji,pi);
+      const bmp=await createImageBitmap(blob);
       const wide=bmp.width>bmp.height*1.15;
       if(bmp.close)bmp.close();
       if(wide){found=p;break;}
@@ -840,6 +1013,18 @@ els.nextSpread.addEventListener("click",async()=>{
 
 els.convert.addEventListener("click",runConvert);
 els.reset.addEventListener("click",resetAll);
+
+// reflect (possibly restored) settings in the UI, then restore from localStorage
+function syncUI(){
+  els.customDims.classList.toggle("hidden", els.profile.value!=="custom");
+  syncDevice();
+  els.gammaV.textContent=(+els.gamma.value).toFixed(2);
+  els.qualityV.textContent=els.quality.value;
+  syncRotDir();
+  updateRenamePreview();
+}
+loadSettings();
+syncUI();
 </script>
 
 <!-- PWA : service worker + invite d'installation -->

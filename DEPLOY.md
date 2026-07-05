@@ -97,5 +97,8 @@ L'export Drive nécessite un **ID client OAuth** Google :
 4. Colle l'ID dans `GOOGLE_CLIENT_ID` (en haut du `<script>` de
    `kobo-converter.html`), puis redéploie.
 
-Tant que `GOOGLE_CLIENT_ID` est vide, le reste de l'app fonctionne ; seul le
-bouton « Envoyer vers Drive » affiche un message de configuration.
+Tu peux aussi **coller l'ID directement dans l'app** : au premier clic sur
+« Envoyer vers Drive », Shiori te le demande et le mémorise dans le navigateur
+(pas besoin de toucher au code ni de redéployer).
+
+Tant qu'aucun ID n'est fourni, le reste de l'app fonctionne normalement.
