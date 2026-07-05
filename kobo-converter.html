@@ -787,8 +787,8 @@ function renderResultsHeader(){
   bar.innerHTML=`<span class="ra-info">${state.outputs.length} fichier${state.outputs.length>1?"s":""} · ${totalMB} Mo au total</span>`;
   if(state.outputs.length>1){
     const allBtn=document.createElement("button");
-    allBtn.className="ra-btn"; allBtn.textContent="⤓ Tout télécharger (.zip)";
-    allBtn.onclick=()=>downloadAllZip(allBtn);
+    allBtn.className="ra-btn"; allBtn.textContent="⤓ Tout télécharger";
+    allBtn.onclick=()=>downloadAll(allBtn);
     bar.appendChild(allBtn);
   }
   const drvBtn=document.createElement("button");
@@ -798,18 +798,28 @@ function renderResultsHeader(){
   els.results.prepend(bar);
 }
 
-async function downloadAllZip(btn){
-  btn.disabled=true; const old=btn.textContent; btn.textContent="Compression…";
+// Télécharge chaque CBZ séparément (pas de zip global : un lot de plusieurs Go
+// dépasse la limite d'allocation mémoire du navigateur). Le navigateur demande
+// une fois l'autorisation des « téléchargements multiples » — c'est normal.
+async function downloadAll(btn){
+  btn.disabled=true; const old=btn.textContent;
   try{
-    const zip=new JSZip();
-    state.outputs.forEach(o=>zip.file(o.filename,o.blob));
-    const blob=await zip.generateAsync({type:"blob",compression:"STORE"});
-    const a=document.createElement("a");
-    a.href=URL.createObjectURL(blob); a.download="Shiori — "+state.outputs.length+" tomes.zip";
-    a.click();
-    setTimeout(()=>URL.revokeObjectURL(a.href),4000);
-  }catch(e){ alert("Échec de la création du zip : "+e.message); }
-  btn.disabled=false; btn.textContent=old;
+    for(let i=0;i<state.outputs.length;i++){
+      const o=state.outputs[i];
+      btn.textContent=`Téléchargement ${i+1}/${state.outputs.length}…`;
+      const url=URL.createObjectURL(o.blob);
+      const a=document.createElement("a");
+      a.href=url; a.download=o.filename;
+      document.body.appendChild(a); a.click(); a.remove();
+      // laisse le temps au navigateur d'enchaîner sans bloquer les suivants
+      await new Promise(r=>setTimeout(r, 900));
+    }
+    btn.textContent=`✓ ${state.outputs.length} téléchargements lancés`;
+    setTimeout(()=>{ btn.textContent=old; btn.disabled=false; }, 5000);
+  }catch(e){
+    alert("Échec du téléchargement : "+e.message);
+    btn.textContent=old; btn.disabled=false;
+  }
 }
 
 function comicInfoXML(title,count){
