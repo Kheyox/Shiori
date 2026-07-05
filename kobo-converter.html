@@ -859,8 +859,18 @@ const DRIVE_SCOPE = "https://www.googleapis.com/auth/drive";
 let driveToken=null, driveTokenClient=null;
 
 // ID client / clé API : codés en dur OU collés par l'utilisateur (mémorisés).
-function driveClientId(){ return GOOGLE_CLIENT_ID || localStorage.getItem("shiori_gclient") || ""; }
-function driveApiKey(){ return localStorage.getItem("shiori_gapikey") || ""; }
+// On valide le format : une valeur mal collée (ex. la clé API mise à la place
+// de l'ID client) est ignorée, ce qui déclenche une nouvelle demande propre.
+const CLIENT_ID_RE = /\.apps\.googleusercontent\.com$/;
+const API_KEY_RE   = /^AIza[\w-]{20,}$/;
+function driveClientId(){
+  const v = GOOGLE_CLIENT_ID || localStorage.getItem("shiori_gclient") || "";
+  return CLIENT_ID_RE.test(v) ? v : "";
+}
+function driveApiKey(){
+  const v = localStorage.getItem("shiori_gapikey") || "";
+  return API_KEY_RE.test(v) ? v : "";
+}
 
 function driveReady(){ return !!(window.google && google.accounts && google.accounts.oauth2); }
 
@@ -953,10 +963,14 @@ async function uploadToDrive(name,blob,folderId){
 
 async function exportToDrive(btn){
   if(!driveClientId()){
-    const cid=(prompt("Export Drive — colle ton ID client OAuth Google\n(…apps.googleusercontent.com).\n\n"+
-                      "À créer une seule fois (voir DEPLOY.md). Il sera mémorisé dans ce navigateur.\n"+
-                      "En attendant tu peux utiliser « Tout télécharger ».")||"").trim();
+    const cid=(prompt("Export Drive — colle ton ID CLIENT OAuth\n(celui qui finit par « .apps.googleusercontent.com », ligne « Shiori Web »).\n\n"+
+                      "⚠️ Ce n'est PAS la clé API (AIza…) — elle sera demandée juste après.\n"+
+                      "Mémorisé dans ce navigateur.")||"").trim();
     if(!cid) return;
+    if(!CLIENT_ID_RE.test(cid)){
+      alert("Ça ne ressemble pas à un ID client OAuth.\nIl doit finir par « .apps.googleusercontent.com ».\n\n(Si tu as collé la clé « AIza… », c'est la clé API : elle sera demandée à l'étape suivante.)");
+      return;
+    }
     localStorage.setItem("shiori_gclient", cid);
   }
   if(!driveReady()){ alert("Le service Google ne s'est pas chargé (souvent bloqué dans l'aperçu en bac à sable). Réessaie sur la version hébergée."); return; }
@@ -968,10 +982,15 @@ async function exportToDrive(btn){
     // Choix du dossier via le sélecteur visuel (nécessite une clé API).
     // Sans clé API : repli sur un dossier « Shiori » créé automatiquement.
     if(!driveApiKey()){
-      const k=(prompt("Sélecteur de dossier — colle ta clé API Google.\n"+
-                      "(À créer une fois dans le même projet Google Cloud.)\n\n"+
+      const k=(prompt("Sélecteur de dossier — colle ta CLÉ API Google\n(celle qui commence par « AIza… », p. ex. la « Browser key »).\n\n"+
                       "Laisse vide pour envoyer dans un dossier « Shiori » créé automatiquement.")||"").trim();
-      if(k) localStorage.setItem("shiori_gapikey", k);
+      if(k){
+        if(!API_KEY_RE.test(k)){
+          alert("Ça ne ressemble pas à une clé API.\nElle commence par « AIza… ».");
+          btn.textContent=old; btn.disabled=false; return;
+        }
+        localStorage.setItem("shiori_gapikey", k);
+      }
     }
     let folderId, folderName;
     if(driveApiKey()){
