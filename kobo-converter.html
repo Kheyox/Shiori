@@ -795,6 +795,18 @@ function renderResultsHeader(){
   drvBtn.className="ra-btn drive"; drvBtn.textContent="▲ Envoyer vers Drive";
   drvBtn.onclick=()=>exportToDrive(drvBtn);
   bar.appendChild(drvBtn);
+  // Petit lien pour oublier l'ID client / la clé API mémorisés (si mal collés).
+  const resetBtn=document.createElement("button");
+  resetBtn.className="ra-btn drive"; resetBtn.style.fontSize="12px"; resetBtn.style.opacity=".8";
+  resetBtn.textContent="⟲ Config Drive"; resetBtn.title="Oublier l'ID client OAuth et la clé API mémorisés";
+  resetBtn.onclick=()=>{
+    if(confirm("Oublier l'ID client OAuth et la clé API Drive mémorisés ?\nTu les recolleras au prochain « Envoyer vers Drive ».")){
+      localStorage.removeItem("shiori_gclient");
+      localStorage.removeItem("shiori_gapikey");
+      alert("Config Drive réinitialisée.");
+    }
+  };
+  bar.appendChild(resetBtn);
   els.results.prepend(bar);
 }
 
