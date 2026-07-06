@@ -183,8 +183,8 @@
     <span class="ic">本</span>
     <h2>Dépose tes fichiers ici</h2>
     <p>ou clique pour parcourir</p>
-    <div class="formats">.CBZ · .ZIP · .PDF · JPG · PNG · WEBP — plusieurs volumes acceptés</div>
-    <input type="file" id="file" multiple accept=".cbz,.zip,.pdf,application/pdf,image/*" class="hidden">
+    <div class="formats">.CBZ · .ZIP · .CBR · .PDF · JPG · PNG · WEBP — plusieurs volumes acceptés</div>
+    <input type="file" id="file" multiple accept=".cbz,.zip,.cbr,.rar,.pdf,application/pdf,image/*" class="hidden">
   </div>
 
   <div id="workspace" class="hidden">
@@ -298,6 +298,7 @@
 
     <div class="runbar">
       <button class="btn" id="convert">Convertir</button>
+      <button class="btn ghost hidden" id="convert-dir" title="Choisis un dossier ; chaque tome y est écrit dès qu'il est prêt (mémoire minimale, idéal gros lots / Kobo branchée)">Convertir → dossier</button>
       <button class="btn ghost" id="reset">Recommencer</button>
       <div class="prog hidden" id="prog">
         <div class="bar"><div class="fill" id="prog-fill"></div></div>
@@ -309,7 +310,7 @@
   </div>
 
   <footer>
-    <strong style="color:var(--muted)">Shiori</strong> — convertisseur e-ink local. Installable en appli (PWA) sur tes 3 appareils&nbsp;: le bouton «&nbsp;Installer l'app&nbsp;» apparaît dans l'en-tête, ou ajoute la page à l'écran d'accueil. Une fois installée, elle fonctionne hors-ligne. Le CBZ sort prêt à copier dans le dossier de ta Kobo ou à pousser via Google&nbsp;Drive. Formats d'entrée&nbsp;: <code>.cbz</code> <code>.zip</code> <code>.pdf</code> et images. CBR/EPUB&nbsp;: en cours.
+    <strong style="color:var(--muted)">Shiori</strong> — convertisseur e-ink local. Installable en appli (PWA) sur tes 3 appareils&nbsp;: le bouton «&nbsp;Installer l'app&nbsp;» apparaît dans l'en-tête, ou ajoute la page à l'écran d'accueil. Une fois installée, elle fonctionne hors-ligne. Le CBZ sort prêt à copier dans le dossier de ta Kobo ou à pousser via Google&nbsp;Drive. Formats d'entrée&nbsp;: <code>.cbz</code> <code>.zip</code> <code>.cbr</code> <code>.pdf</code> et images. EPUB&nbsp;: en cours.
   </footer>
 </div>
 
@@ -338,7 +339,7 @@ const els = {
   prev:$("prev"), next:$("next"), pgLabel:$("pg-label"),
   koboScreen:$("kobo-screen"), koboStatus:$("kobo-status"), rtlInd:$("rtl-ind"),
   nextSpread:$("next-spread"),
-  convert:$("convert"), reset:$("reset"), prog:$("prog"), progFill:$("prog-fill"), progTxt:$("prog-txt"),
+  convert:$("convert"), convertDir:$("convert-dir"), reset:$("reset"), prog:$("prog"), progFill:$("prog-fill"), progTxt:$("prog-txt"),
   results:$("results"), jobCount:$("job-count"), devName:$("dev-name"), devRes:$("dev-res"),
 };
 
@@ -436,8 +437,27 @@ async function handleFiles(fileList){
   const files=[...fileList];
   const archives=files.filter(f=>/\.(cbz|zip)$/i.test(f.name)).sort((a,b)=>natSort(a.name,b.name));
   const pdfs=files.filter(f=>/\.pdf$/i.test(f.name)||f.type==="application/pdf").sort((a,b)=>natSort(a.name,b.name));
+  const rars=files.filter(f=>/\.(cbr|rar)$/i.test(f.name)).sort((a,b)=>natSort(a.name,b.name));
   const loose=files.filter(f=>f.type.startsWith("image/")||IMG_RE.test(f.name));
   let failed=0;
+
+  for(const rf of rars){
+    try{
+      await loadLibarchive();
+      const archive=await LibArchive.open(rf);
+      const arr=await archive.getFilesArray();
+      const imgs=arr
+        .map(e=>({full:(e.path||"")+(e.file.name||"")}))
+        .filter(e=>IMG_RE.test(e.full) && !isJunk(e.full))
+        .sort((a,b)=>natSort(a.full,b.full));
+      if(imgs.length){
+        const base=rf.name.replace(/\.(cbr|rar)$/i,"");
+        state.jobs.push({ name:base, rawName:base, file:rf, rar:true,
+          pages: imgs.map(e=>({name:e.full.split("/").pop()})) });
+      }
+      if(archive.close){ try{ await archive.close(); }catch(e){} }  // rouvert à la demande
+    }catch(err){ failed++; console.error("cbr fail",rf.name,err); }
+  }
 
   for(const pdf of pdfs){
     try{
@@ -496,6 +516,7 @@ async function getPageBlob(ji,pi){
   const job=state.jobs[ji], page=job.pages[pi];
   if(page.blob) return page.blob;                 // image en vrac (File)
   if(job.pdfDoc) return renderPdfPage(job.pdfDoc, pi+1);  // page de PDF
+  if(job.rar) return getRarPageBlob(ji,pi);       // page de .cbr
   const zip=await getZipFor(ji);
   return zip.file(job.pageNames[pi]).async("blob");
 }
@@ -537,6 +558,42 @@ function renderPdfPage(doc,pageNum){
   };
   const p=pdfLock.then(run,run);
   pdfLock=p.catch(()=>{});   // la file continue même si une page échoue
+  return p;
+}
+
+/* ---------- CBR (.rar) en entrée (libarchive.js, chargé à la demande) ---------- */
+let libarchiveReady=null, LibArchive=null;
+function loadLibarchive(){
+  if(libarchiveReady) return libarchiveReady;
+  libarchiveReady=(async()=>{
+    const mod=await import("https://cdn.jsdelivr.net/npm/libarchive.js@2.0.2/main.js");
+    LibArchive=mod.Archive;
+    LibArchive.init({ workerUrl:"https://cdn.jsdelivr.net/npm/libarchive.js@2.0.2/dist/worker-bundle.js" });
+  })().catch(e=>{ libarchiveReady=null; throw e; });  // permet un nouvel essai
+  return libarchiveReady;
+}
+// Liste triée des images (CompressedFile) d'un .cbr, une archive ouverte à la fois.
+let openRar={ji:-1, archive:null, files:null};
+async function getRarFilesFor(ji){
+  if(openRar.ji===ji && openRar.files) return openRar.files;
+  if(openRar.archive && openRar.archive.close){ try{ await openRar.archive.close(); }catch(e){} }
+  await loadLibarchive();
+  const archive=await LibArchive.open(state.jobs[ji].file);
+  const arr=await archive.getFilesArray();      // [{file, path}]
+  const imgs=arr
+    .map(e=>({cf:e.file, full:(e.path||"")+(e.file.name||"")}))
+    .filter(e=>IMG_RE.test(e.full) && !isJunk(e.full))
+    .sort((a,b)=>natSort(a.full,b.full))
+    .map(e=>e.cf);
+  openRar={ji, archive, files:imgs};
+  return imgs;
+}
+// Sérialise ouverture + extraction (un seul worker libarchive).
+let rarLock=Promise.resolve();
+function getRarPageBlob(ji,pi){
+  const run=async()=>{ const files=await getRarFilesFor(ji); return files[pi].extract(); };
+  const p=rarLock.then(run,run);
+  rarLock=p.catch(()=>{});
   return p;
 }
 
@@ -806,11 +863,13 @@ async function mapLimit(items, limit, fn){
   return results;
 }
 
-async function runConvert(){
+async function runConvert(dirHandle){
   els.convert.disabled=true; els.reset.disabled=true;
+  if(els.convertDir) els.convertDir.disabled=true;
   els.prog.classList.remove("hidden");
   els.results.innerHTML="";
   state.outputs=[];
+  state.streamed=!!dirHandle;   // écriture au fil de l'eau (rien gardé en mémoire)
   releaseZip(); // libère l'archive de l'aperçu avant de charger la mémoire
   const o=opts();
   const total=state.flatPreview.length;
@@ -827,16 +886,16 @@ async function runConvert(){
     const zip=new JSZip();
     const pad=String(job.pages.length*2).length;
     let src=null;
-    try{ if(job.file) src=await JSZip.loadAsync(job.file); }
+    try{ if(job.file && !job.rar) src=await JSZip.loadAsync(job.file); }
     catch(e){ console.error("open fail",job.name,e); }
 
     // extraction + traitement page par page (bornés par CONC), dans l'ordre
     const perPage=await mapLimit(job.pages, CONC, async (page,pi)=>{
       let blob;
       try{
-        if(job.pdfDoc)      blob=await getPageBlob(j,pi);
-        else if(job.file)   blob=await src.file(job.pageNames[pi]).async("blob");
-        else                blob=page.blob;
+        if(job.pdfDoc||job.rar) blob=await getPageBlob(j,pi);
+        else if(job.file)       blob=await src.file(job.pageNames[pi]).async("blob");
+        else                    blob=page.blob;
       }
       catch(e){ tick(j,job); return []; }
       let r; try{ r=await processor.run(blob,o); }catch(e){ tick(j,job); return []; }
@@ -859,14 +918,33 @@ async function runConvert(){
     // Suffixe « (Kobo) » seulement sans renommage (pour ne pas écraser la source).
     // Avec renommage, le modèle donne déjà un nom propre.
     const filename=base+(els.rename.checked?"":" (Kobo)")+".cbz";
-    state.outputs.push({filename, blob:cbz, pageCount:outCount});
-    addResult(filename, cbz, outCount);
+    if(dirHandle){
+      // Écriture au fil de l'eau : on écrit le tome puis on libère le blob.
+      // Rien ne s'accumule en mémoire ⇒ des centaines de tomes possibles.
+      try{
+        const fh=await dirHandle.getFileHandle(filename,{create:true});
+        const w=await fh.createWritable(); await w.write(cbz); await w.close();
+        state.outputs.push({filename, blob:null, pageCount:outCount, saved:true});
+        addResult(filename, null, outCount);
+      }catch(e){
+        els.progTxt.textContent="Écriture interrompue : "+e.message;
+        els.convert.disabled=false; els.reset.disabled=false;
+        if(els.convertDir) els.convertDir.disabled=false;
+        return;
+      }
+    }else{
+      state.outputs.push({filename, blob:cbz, pageCount:outCount});
+      addResult(filename, cbz, outCount);
+    }
     await new Promise(r=>setTimeout(r,0)); // laisse respirer le GC entre les tomes
   }
-  els.progTxt.textContent=`Terminé ✓ — ${nJobs} tome${nJobs>1?"s":""}`;
+  els.progTxt.textContent = dirHandle
+    ? `Terminé ✓ — ${nJobs} tome${nJobs>1?"s":""} écrit${nJobs>1?"s":""} dans le dossier`
+    : `Terminé ✓ — ${nJobs} tome${nJobs>1?"s":""}`;
   els.progFill.style.width="100%";
   renderResultsHeader();
   els.convert.disabled=false; els.reset.disabled=false;
+  if(els.convertDir) els.convertDir.disabled=false;
 }
 
 // Top actions over the results list: download-all zip + Drive export
@@ -874,6 +952,13 @@ function renderResultsHeader(){
   if(!state.outputs.length) return;
   const bar=document.createElement("div");
   bar.className="res-actions";
+  // Écriture au fil de l'eau : tout est déjà sur le disque, pas de blob à
+  // télécharger/envoyer. On affiche juste une confirmation.
+  if(state.streamed){
+    bar.innerHTML=`<span class="ra-info">✓ ${state.outputs.length} tome${state.outputs.length>1?"s":""} enregistré${state.outputs.length>1?"s":""} dans le dossier choisi.</span>`;
+    els.results.prepend(bar);
+    return;
+  }
   const totalMB=(state.outputs.reduce((s,o)=>s+o.blob.size,0)/1048576).toFixed(0);
   bar.innerHTML=`<span class="ra-info">${state.outputs.length} fichier${state.outputs.length>1?"s":""} · ${totalMB} Mo au total</span>`;
   // Enregistrement direct dans un dossier (Chrome/Edge desktop) : tu choisis un
@@ -975,17 +1060,22 @@ ${lines.join("\n")}
 }
 
 function addResult(filename, blob, pageCount){
-  const url=URL.createObjectURL(blob);
-  const sizeMB=(blob.size/1048576).toFixed(1);
+  const sizeMB=blob?(blob.size/1048576).toFixed(1)+" Mo":"enregistré";
   const row=document.createElement("div");
   row.className="res";
   row.innerHTML=`<span class="chk">✓</span>
     <div class="grow"><div class="nm"></div>
-    <div class="meta">${pageCount} pages · ${sizeMB} Mo</div></div>`;
+    <div class="meta">${pageCount} pages · ${sizeMB}</div></div>`;
   row.querySelector(".nm").textContent=filename;
-  const a=document.createElement("a");
-  a.className="dl"; a.href=url; a.download=filename; a.textContent="Télécharger";
-  row.appendChild(a);
+  if(blob){   // téléchargement individuel (le blob est encore en mémoire)
+    const a=document.createElement("a");
+    a.className="dl"; a.href=URL.createObjectURL(blob); a.download=filename; a.textContent="Télécharger";
+    row.appendChild(a);
+  }else{      // déjà écrit sur le disque (écriture au fil de l'eau)
+    const tag=document.createElement("span");
+    tag.className="meta"; tag.style.color="var(--ok)"; tag.textContent="↳ dans le dossier";
+    row.appendChild(tag);
+  }
   els.results.appendChild(row);
 }
 
@@ -1248,7 +1338,17 @@ els.nextSpread.addEventListener("click",async()=>{
   else{ els.koboStatus.textContent="aucune planche large dans les 80 pages suivantes"; }
 });
 
-els.convert.addEventListener("click",runConvert);
+els.convert.addEventListener("click",()=>runConvert());
+// Convertir en écrivant au fil de l'eau dans un dossier choisi (si l'API existe).
+if(window.showDirectoryPicker && els.convertDir){
+  els.convertDir.classList.remove("hidden");
+  els.convertDir.addEventListener("click",async()=>{
+    let dir;
+    try{ dir=await window.showDirectoryPicker({mode:"readwrite"}); }
+    catch(e){ return; } // annulé
+    runConvert(dir);
+  });
+}
 els.reset.addEventListener("click",resetAll);
 
 // reflect (possibly restored) settings in the UI, then restore from localStorage
