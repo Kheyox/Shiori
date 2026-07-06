@@ -183,8 +183,8 @@
     <span class="ic">本</span>
     <h2>Dépose tes fichiers ici</h2>
     <p>ou clique pour parcourir</p>
-    <div class="formats">.CBZ · .ZIP · JPG · PNG · WEBP — plusieurs volumes acceptés</div>
-    <input type="file" id="file" multiple accept=".cbz,.zip,image/*" class="hidden">
+    <div class="formats">.CBZ · .ZIP · .PDF · JPG · PNG · WEBP — plusieurs volumes acceptés</div>
+    <input type="file" id="file" multiple accept=".cbz,.zip,.pdf,application/pdf,image/*" class="hidden">
   </div>
 
   <div id="workspace" class="hidden">
@@ -261,6 +261,9 @@
         <label class="toggle"><input type="checkbox" id="trim"><span class="sw"></span>
           <span class="stack">Rogner les marges blanches<span class="desc">Plein écran sans bordure</span></span></label>
 
+        <label class="toggle"><input type="checkbox" id="sharpen"><span class="sw"></span>
+          <span class="stack">Renforcer la netteté<span class="desc">Trait plus net sur l'e-ink (après réduction)</span></span></label>
+
         <div class="field" style="margin-top:17px">
           <label class="lbl" for="gamma">Gamma <span class="val" id="gamma-v">1.00</span></label>
           <input type="range" id="gamma" min="0.5" max="1.6" step="0.05" value="1">
@@ -306,7 +309,7 @@
   </div>
 
   <footer>
-    <strong style="color:var(--muted)">Shiori</strong> — convertisseur e-ink local. Installable en appli (PWA) sur tes 3 appareils&nbsp;: le bouton «&nbsp;Installer l'app&nbsp;» apparaît dans l'en-tête, ou ajoute la page à l'écran d'accueil. Une fois installée, elle fonctionne hors-ligne. Le CBZ sort prêt à copier dans le dossier de ta Kobo ou à pousser via Google&nbsp;Drive. Formats d'entrée&nbsp;: <code>.cbz</code> <code>.zip</code> et images. CBR/PDF/EPUB&nbsp;: en cours.
+    <strong style="color:var(--muted)">Shiori</strong> — convertisseur e-ink local. Installable en appli (PWA) sur tes 3 appareils&nbsp;: le bouton «&nbsp;Installer l'app&nbsp;» apparaît dans l'en-tête, ou ajoute la page à l'écran d'accueil. Une fois installée, elle fonctionne hors-ligne. Le CBZ sort prêt à copier dans le dossier de ta Kobo ou à pousser via Google&nbsp;Drive. Formats d'entrée&nbsp;: <code>.cbz</code> <code>.zip</code> <code>.pdf</code> et images. CBR/EPUB&nbsp;: en cours.
   </footer>
 </div>
 
@@ -330,7 +333,7 @@ const els = {
   profile:$("profile"), customDims:$("custom-dims"), cw:$("cw"), ch:$("ch"),
   colormode:$("colormode"), rtl:$("rtl"), dblmode:$("dblmode"), rotdir:$("rotdir"), rotdirField:$("rotdir-field"),
   rename:$("rename"), renameField:$("rename-field"), renametpl:$("renametpl"), renamePreview:$("rename-preview"),
-  levels:$("levels"), trim:$("trim"),
+  levels:$("levels"), trim:$("trim"), sharpen:$("sharpen"),
   gamma:$("gamma"), gammaV:$("gamma-v"), quality:$("quality"), qualityV:$("quality-v"),
   prev:$("prev"), next:$("next"), pgLabel:$("pg-label"),
   koboScreen:$("kobo-screen"), koboStatus:$("kobo-status"), rtlInd:$("rtl-ind"),
@@ -354,14 +357,14 @@ function opts(){
     tw:d.w, th:d.h,
     colorMode:els.colormode.value, rtl:els.rtl.checked,
     dblmode:els.dblmode.value, rotdir:els.rotdir.value,
-    levels:els.levels.checked, trim:els.trim.checked,
+    levels:els.levels.checked, trim:els.trim.checked, sharpen:els.sharpen.checked,
     gamma:+els.gamma.value, quality:+els.quality.value/100,
   };
 }
 
 /* ---------- Réglages mémorisés (localStorage) ---------- */
 const LS_KEY="shiori_settings_v1";
-const SETTINGS_IDS=["profile","cw","ch","colormode","rtl","dblmode","rotdir","rename","renametpl","levels","trim","gamma","quality"];
+const SETTINGS_IDS=["profile","cw","ch","colormode","rtl","dblmode","rotdir","rename","renametpl","levels","trim","sharpen","gamma","quality"];
 function saveSettings(){
   try{
     const s={};
@@ -432,8 +435,20 @@ function isJunk(name){
 async function handleFiles(fileList){
   const files=[...fileList];
   const archives=files.filter(f=>/\.(cbz|zip)$/i.test(f.name)).sort((a,b)=>natSort(a.name,b.name));
+  const pdfs=files.filter(f=>/\.pdf$/i.test(f.name)||f.type==="application/pdf").sort((a,b)=>natSort(a.name,b.name));
   const loose=files.filter(f=>f.type.startsWith("image/")||IMG_RE.test(f.name));
   let failed=0;
+
+  for(const pdf of pdfs){
+    try{
+      await loadPdfJs();
+      const doc=await pdfjsLib.getDocument({data:await pdf.arrayBuffer()}).promise;
+      const n=doc.numPages;
+      const base=pdf.name.replace(/\.pdf$/i,"");
+      state.jobs.push({ name:base, rawName:base, file:null, pdfDoc:doc, pdfPages:n,
+        pages:Array.from({length:n},(_,i)=>({name:"p"+String(i+1).padStart(3,"0")})) });
+    }catch(err){ failed++; console.error("pdf fail",pdf.name,err); }
+  }
 
   for(const arc of archives){
     try{
@@ -480,10 +495,50 @@ async function getZipFor(ji){
 async function getPageBlob(ji,pi){
   const job=state.jobs[ji], page=job.pages[pi];
   if(page.blob) return page.blob;                 // image en vrac (File)
+  if(job.pdfDoc) return renderPdfPage(job.pdfDoc, pi+1);  // page de PDF
   const zip=await getZipFor(ji);
   return zip.file(job.pageNames[pi]).async("blob");
 }
 function releaseZip(){ openZip={ji:-1, zip:null}; }
+
+/* ---------- PDF en entrée (pdf.js, chargé à la demande) ---------- */
+let pdfjsReady=null;
+function loadPdfJs(){
+  if(pdfjsReady) return pdfjsReady;
+  pdfjsReady=new Promise((resolve,reject)=>{
+    if(window.pdfjsLib) return resolve();
+    const s=document.createElement("script");
+    s.src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js";
+    s.onload=()=>{
+      try{ pdfjsLib.GlobalWorkerOptions.workerSrc="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js"; resolve(); }
+      catch(e){ reject(e); }
+    };
+    s.onerror=()=>reject(new Error("Chargement de pdf.js impossible (réseau ?)"));
+    document.head.appendChild(s);
+  });
+  return pdfjsReady;
+}
+// Rend une page PDF en blob PNG (sans perte avant le pipeline). Sérialisé : une
+// seule page rendue à la fois ⇒ mémoire bornée même sur un gros PDF.
+let pdfLock=Promise.resolve();
+function renderPdfPage(doc,pageNum){
+  const run=async()=>{
+    const page=await doc.getPage(pageNum);
+    const v1=page.getViewport({scale:1});
+    let scale=2000/Math.max(v1.width,v1.height);   // ~2000 px sur le grand côté
+    scale=Math.max(1,Math.min(scale,4));
+    const vp=page.getViewport({scale});
+    const c=document.createElement("canvas");
+    c.width=Math.ceil(vp.width); c.height=Math.ceil(vp.height);
+    await page.render({canvasContext:c.getContext("2d"), viewport:vp}).promise;
+    const blob=await new Promise(res=>c.toBlob(res,"image/png"));
+    if(page.cleanup) page.cleanup();
+    return blob;
+  };
+  const p=pdfLock.then(run,run);
+  pdfLock=p.catch(()=>{});   // la file continue même si une page échoue
+  return p;
+}
 
 /* ---------- Image processing core ----------
    Défini une seule fois, réutilisé tel quel dans un Web Worker (via toString)
@@ -555,6 +610,28 @@ function buildProcessor(makeCanvas, toBlob){
     ctx.putImageData(img,0,0);
   }
 
+  // Netteté (unsharp par noyau Laplacien 3×3). Appliquée après réduction, donc
+  // sur l'image finale — c'est là qu'elle rend le mieux sur e-ink.
+  function sharpen(ctx,w,h){
+    if(w<3||h<3) return;
+    const src=ctx.getImageData(0,0,w,h), s=src.data;
+    const out=ctx.createImageData(w,h), d=out.data;
+    const a=0.5, c=1+4*a;   // a = force du renforcement
+    const row=w*4;
+    for(let y=0;y<h;y++){
+      for(let x=0;x<w;x++){
+        const i=(y*w+x)*4;
+        if(x===0||y===0||x===w-1||y===h-1){ d[i]=s[i];d[i+1]=s[i+1];d[i+2]=s[i+2];d[i+3]=s[i+3]; continue; }
+        for(let k=0;k<3;k++){
+          const v=c*s[i+k]-a*(s[i-4+k]+s[i+4+k]+s[i-row+k]+s[i+row+k]);
+          d[i+k]= v<0?0:v>255?255:v;
+        }
+        d[i+3]=s[i+3];
+      }
+    }
+    ctx.putImageData(out,0,0);
+  }
+
   function renderRegion(bmp,sx,sy,sw,sh,o){
     let box={sx,sy,sw,sh};
     if(o.trim) box=trimBox(bmp,sx,sy,sw,sh);
@@ -564,6 +641,7 @@ function buildProcessor(makeCanvas, toBlob){
     ctx.imageSmoothingQuality="high";
     ctx.drawImage(bmp,box.sx,box.sy,box.sw,box.sh,0,0,dw,dh);
     applyPixelOps(ctx,dw,dh,o);
+    if(o.sharpen) sharpen(ctx,dw,dh);
     return cv;
   }
 
@@ -583,6 +661,7 @@ function buildProcessor(makeCanvas, toBlob){
     ctx.drawImage(bmp,box.sx,box.sy,box.sw,box.sh,0,0,dh,dw);
     ctx.restore();
     applyPixelOps(ctx,dw,dh,o);
+    if(o.sharpen) sharpen(ctx,dw,dh);
     return cv;
   }
 
@@ -754,7 +833,11 @@ async function runConvert(){
     // extraction + traitement page par page (bornés par CONC), dans l'ordre
     const perPage=await mapLimit(job.pages, CONC, async (page,pi)=>{
       let blob;
-      try{ blob = job.file ? await src.file(job.pageNames[pi]).async("blob") : page.blob; }
+      try{
+        if(job.pdfDoc)      blob=await getPageBlob(j,pi);
+        else if(job.file)   blob=await src.file(job.pageNames[pi]).async("blob");
+        else                blob=page.blob;
+      }
       catch(e){ tick(j,job); return []; }
       let r; try{ r=await processor.run(blob,o); }catch(e){ tick(j,job); return []; }
       tick(j,job);
@@ -768,7 +851,10 @@ async function runConvert(){
     }
 
     const base=outputBaseName(job);
-    if(o.rtl) zip.file("ComicInfo.xml", comicInfoXML(base, outCount));
+    const meta=parseName(job.rawName||job.name);
+    zip.file("ComicInfo.xml", comicInfoXML({
+      title:base, series:meta.series, number:meta.tome, count:outCount, rtl:o.rtl,
+    }));
     const cbz=await zip.generateAsync({type:"blob",compression:"STORE"});
     // Suffixe « (Kobo) » seulement sans renommage (pour ne pas écraser la source).
     // Avec renommage, le modèle donne déjà un nom propre.
@@ -790,6 +876,15 @@ function renderResultsHeader(){
   bar.className="res-actions";
   const totalMB=(state.outputs.reduce((s,o)=>s+o.blob.size,0)/1048576).toFixed(0);
   bar.innerHTML=`<span class="ra-info">${state.outputs.length} fichier${state.outputs.length>1?"s":""} · ${totalMB} Mo au total</span>`;
+  // Enregistrement direct dans un dossier (Chrome/Edge desktop) : tu choisis un
+  // dossier une fois, tout s'y écrit — idéal pour viser le dossier de la Kobo.
+  if(window.showDirectoryPicker){
+    const dirBtn=document.createElement("button");
+    dirBtn.className="ra-btn"; dirBtn.textContent="📁 Enregistrer dans un dossier";
+    dirBtn.title="Écrit tous les CBZ dans un dossier de ton choix (ex. la Kobo branchée)";
+    dirBtn.onclick=()=>saveToFolder(dirBtn);
+    bar.appendChild(dirBtn);
+  }
   if(state.outputs.length>1){
     const allBtn=document.createElement("button");
     allBtn.className="ra-btn"; allBtn.textContent="⤓ Tout télécharger";
@@ -813,6 +908,31 @@ function renderResultsHeader(){
   };
   bar.appendChild(resetBtn);
   els.results.prepend(bar);
+}
+
+// Écrit tous les CBZ directement dans un dossier choisi (File System Access API).
+// Un seul choix de dossier, aucun téléchargement multiple, pas de limite mémoire.
+async function saveToFolder(btn){
+  if(!window.showDirectoryPicker){ alert("Ton navigateur ne gère pas l'enregistrement direct (essaie Chrome ou Edge sur ordinateur)."); return; }
+  let dir;
+  try{ dir=await window.showDirectoryPicker({mode:"readwrite"}); }
+  catch(e){ return; } // annulé par l'utilisateur
+  btn.disabled=true; const old=btn.textContent;
+  try{
+    for(let i=0;i<state.outputs.length;i++){
+      const o=state.outputs[i];
+      btn.textContent=`Enregistrement ${i+1}/${state.outputs.length}…`;
+      const fh=await dir.getFileHandle(o.filename,{create:true});
+      const w=await fh.createWritable();
+      await w.write(o.blob);
+      await w.close();
+    }
+    btn.textContent=`✓ ${state.outputs.length} fichier${state.outputs.length>1?"s":""} enregistré${state.outputs.length>1?"s":""}`;
+    setTimeout(()=>{ btn.textContent=old; btn.disabled=false; }, 5000);
+  }catch(e){
+    alert("Échec de l'enregistrement : "+e.message);
+    btn.textContent=old; btn.disabled=false;
+  }
 }
 
 // Télécharge chaque CBZ séparément (pas de zip global : un lot de plusieurs Go
@@ -839,13 +959,18 @@ async function downloadAll(btn){
   }
 }
 
-function comicInfoXML(title,count){
-  const esc=s=>s.replace(/[<>&]/g,c=>({"<":"&lt;",">":"&gt;","&":"&amp;"}[c]));
+// ComicInfo enrichi : Series + Number permettent à la Kobo de regrouper les
+// tomes d'une même saga en une seule série (au lieu de fichiers en vrac).
+function comicInfoXML({title,series,number,count,rtl}){
+  const esc=s=>String(s).replace(/[<>&]/g,c=>({"<":"&lt;",">":"&gt;","&":"&amp;"}[c]));
+  const lines=[`  <Title>${esc(title)}</Title>`];
+  if(series)         lines.push(`  <Series>${esc(series)}</Series>`);
+  if(number!=null)   lines.push(`  <Number>${esc(number)}</Number>`);
+  lines.push(`  <PageCount>${count}</PageCount>`);
+  lines.push(`  <Manga>${rtl?"YesAndRightToLeft":"No"}</Manga>`);
   return `<?xml version="1.0" encoding="utf-8"?>
 <ComicInfo xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
-  <Title>${esc(title)}</Title>
-  <PageCount>${count}</PageCount>
-  <Manga>YesAndRightToLeft</Manga>
+${lines.join("\n")}
 </ComicInfo>`;
 }
 
@@ -1075,7 +1200,7 @@ els.profile.addEventListener("change",()=>{
 
 // colour / toggles / sliders
 els.colormode.addEventListener("change",schedulePreview);
-["rtl","levels","trim"].forEach(k=>els[k].addEventListener("change",schedulePreview));
+["rtl","levels","trim","sharpen"].forEach(k=>els[k].addEventListener("change",schedulePreview));
 function syncRotDir(){
   const m=els.dblmode.value;
   els.rotdirField.classList.toggle("hidden", !(m==="rotate"||m==="both"));
