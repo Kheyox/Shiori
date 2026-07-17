@@ -62,6 +62,8 @@
     padding:42px 24px;text-align:center;cursor:pointer;transition:.18s;
     background:var(--surface);position:relative}
   .drop:hover,.drop.hot{border-color:var(--ink);background:var(--surface-2)}
+  .drop.busy{border-color:var(--ink);pointer-events:none;animation:pulse 1.2s ease-in-out infinite}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.55}}
   .drop h2{margin:0 0 6px;font-size:18px;font-weight:600}
   .drop p{margin:0;color:var(--muted);font-size:13.5px}
   .drop .ic{font-size:30px;display:block;margin-bottom:10px;opacity:.85}
@@ -183,8 +185,8 @@
     <span class="ic">本</span>
     <h2>Dépose tes fichiers ici</h2>
     <p>ou clique pour parcourir</p>
-    <div class="formats">.CBZ · .ZIP · .CBR · .PDF · JPG · PNG · WEBP — plusieurs volumes acceptés</div>
-    <input type="file" id="file" multiple accept=".cbz,.zip,.cbr,.rar,.pdf,application/pdf,image/*" class="hidden">
+    <div class="formats">.CBZ · .ZIP · .CBR · .PDF · .EPUB · JPG · PNG · WEBP — plusieurs volumes acceptés</div>
+    <input type="file" id="file" multiple accept=".cbz,.zip,.cbr,.rar,.pdf,.epub,application/pdf,application/epub+zip,image/*" class="hidden">
   </div>
 
   <div id="workspace" class="hidden">
@@ -310,7 +312,7 @@
   </div>
 
   <footer>
-    <strong style="color:var(--muted)">Shiori</strong> — convertisseur e-ink local. Installable en appli (PWA) sur tes 3 appareils&nbsp;: le bouton «&nbsp;Installer l'app&nbsp;» apparaît dans l'en-tête, ou ajoute la page à l'écran d'accueil. Une fois installée, elle fonctionne hors-ligne. Le CBZ sort prêt à copier dans le dossier de ta Kobo ou à pousser via Google&nbsp;Drive. Formats d'entrée&nbsp;: <code>.cbz</code> <code>.zip</code> <code>.cbr</code> <code>.pdf</code> et images. EPUB&nbsp;: en cours.
+    <strong style="color:var(--muted)">Shiori</strong> — convertisseur e-ink local. Installable en appli (PWA) sur tes 3 appareils&nbsp;: le bouton «&nbsp;Installer l'app&nbsp;» apparaît dans l'en-tête, ou ajoute la page à l'écran d'accueil. Une fois installée, elle fonctionne hors-ligne. Le CBZ sort prêt à copier dans le dossier de ta Kobo ou à pousser via Google&nbsp;Drive. Formats d'entrée&nbsp;: <code>.cbz</code> <code>.zip</code> <code>.cbr</code> <code>.pdf</code> <code>.epub</code> et images.
   </footer>
 </div>
 
@@ -433,15 +435,52 @@ function isJunk(name){
    On lit seulement la liste des pages de chaque archive puis on garde le fichier ;
    les images sont décompressées à la volée (aperçu + conversion). Ça permet des
    dizaines de tomes lourds sans saturer la RAM. */
+// Un EPUB est un zip : on en extrait les images. Les EPUB manga numérotent
+// leurs pages ⇒ le tri naturel des chemins reflète l'ordre de lecture.
+async function epubImageOrder(zip){
+  return Object.keys(zip.files)
+    .filter(n=>!zip.files[n].dir && IMG_RE.test(n) && !isJunk(n))
+    .sort(natSort);
+}
+
+// Affiche l'avancement de l'import dans la zone de dépôt (lire les index de
+// 38 archives prend plusieurs secondes : sans retour visuel on croit à un bug).
+function importProgress(cur,total,name){
+  const h2=els.drop.querySelector("h2"), p=els.drop.querySelector("p");
+  if(cur==null){ h2.textContent="Dépose tes fichiers ici"; p.textContent="ou clique pour parcourir"; els.drop.classList.remove("busy"); return; }
+  els.drop.classList.add("busy");
+  h2.textContent=`Import en cours… ${cur}/${total}`;
+  p.textContent=name||"";
+}
+
 async function handleFiles(fileList){
   const files=[...fileList];
   const archives=files.filter(f=>/\.(cbz|zip)$/i.test(f.name)).sort((a,b)=>natSort(a.name,b.name));
   const pdfs=files.filter(f=>/\.pdf$/i.test(f.name)||f.type==="application/pdf").sort((a,b)=>natSort(a.name,b.name));
   const rars=files.filter(f=>/\.(cbr|rar)$/i.test(f.name)).sort((a,b)=>natSort(a.name,b.name));
+  const epubs=files.filter(f=>/\.epub$/i.test(f.name)).sort((a,b)=>natSort(a.name,b.name));
   const loose=files.filter(f=>f.type.startsWith("image/")||IMG_RE.test(f.name));
   let failed=0;
+  const totalArc=archives.length+pdfs.length+rars.length+epubs.length;
+  let curArc=0;
+  const step=async(name)=>{ curArc++; importProgress(curArc,totalArc,name);
+    await new Promise(r=>setTimeout(r,0)); }; // laisse l'UI se rafraîchir
+
+  for(const ef of epubs){
+    await step(ef.name);
+    try{
+      const zip=await JSZip.loadAsync(ef);
+      const names=await epubImageOrder(zip);
+      if(names.length){
+        const base=ef.name.replace(/\.epub$/i,"");
+        state.jobs.push({ name:base, rawName:base, file:ef, pageNames:names,
+          pages:names.map(n=>({name:n.split("/").pop()})) });
+      }
+    }catch(err){ failed++; console.error("epub fail",ef.name,err); }
+  }
 
   for(const rf of rars){
+    await step(rf.name);
     try{
       await loadLibarchive();
       const archive=await LibArchive.open(rf);
@@ -460,6 +499,7 @@ async function handleFiles(fileList){
   }
 
   for(const pdf of pdfs){
+    await step(pdf.name);
     try{
       await loadPdfJs();
       const doc=await pdfjsLib.getDocument({data:await pdf.arrayBuffer()}).promise;
@@ -471,6 +511,7 @@ async function handleFiles(fileList){
   }
 
   for(const arc of archives){
+    await step(arc.name);
     try{
       const zip=await JSZip.loadAsync(arc);
       const names=Object.keys(zip.files)
@@ -491,6 +532,7 @@ async function handleFiles(fileList){
       pages:sorted.map(f=>({name:f.name, blob:f})) });
   }
 
+  importProgress(null);
   if(!state.jobs.length){ alert("Aucune image trouvée dans les fichiers déposés."); return; }
   if(failed) alert(failed+" archive(s) illisibles (corrompues ?) ont été ignorées. Les autres sont bien chargées.");
   buildPreviewIndex();
@@ -863,7 +905,25 @@ async function mapLimit(items, limit, fn){
   return results;
 }
 
+/* Le web ne permet pas de continuer un traitement quand l'app est quittée ou
+   l'onglet mis en veille par l'OS. On atténue : wake lock (l'écran ne s'éteint
+   pas ⇒ la conversion continue tant que l'app reste au premier plan) et
+   avertissement si on tente de fermer en pleine conversion. */
+let wakeLock=null, converting=false;
+async function acquireWakeLock(){
+  try{ if("wakeLock" in navigator) wakeLock=await navigator.wakeLock.request("screen"); }catch(e){}
+}
+function releaseWakeLock(){ try{ wakeLock&&wakeLock.release(); }catch(e){} wakeLock=null; }
+// si l'app revient au premier plan pendant une conversion, on re-prend le lock
+document.addEventListener("visibilitychange",()=>{
+  if(document.visibilityState==="visible" && converting) acquireWakeLock();
+});
+window.addEventListener("beforeunload",(e)=>{
+  if(converting){ e.preventDefault(); e.returnValue="Conversion en cours — elle sera perdue si tu quittes."; }
+});
+
 async function runConvert(dirHandle){
+  converting=true; acquireWakeLock();
   els.convert.disabled=true; els.reset.disabled=true;
   if(els.convertDir) els.convertDir.disabled=true;
   els.prog.classList.remove("hidden");
@@ -930,6 +990,7 @@ async function runConvert(dirHandle){
         els.progTxt.textContent="Écriture interrompue : "+e.message;
         els.convert.disabled=false; els.reset.disabled=false;
         if(els.convertDir) els.convertDir.disabled=false;
+        converting=false; releaseWakeLock();
         return;
       }
     }else{
@@ -945,6 +1006,7 @@ async function runConvert(dirHandle){
   renderResultsHeader();
   els.convert.disabled=false; els.reset.disabled=false;
   if(els.convertDir) els.convertDir.disabled=false;
+  converting=false; releaseWakeLock();
 }
 
 // Top actions over the results list: download-all zip + Drive export
