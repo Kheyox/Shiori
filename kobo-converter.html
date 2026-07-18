@@ -77,6 +77,15 @@
   .help-steps{margin:10px 0;padding-left:20px;display:flex;flex-direction:column;gap:12px;font-size:14px;line-height:1.55}
   .help-steps ul{margin:6px 0 0;padding-left:18px;display:flex;flex-direction:column;gap:4px}
   .help-note{font-size:12.5px;color:var(--muted);border-top:1px solid var(--border);padding-top:12px;margin-top:6px;line-height:1.5}
+  #hist-overlay{position:fixed;inset:0;z-index:9998;background:rgba(0,0,0,.55);
+    display:flex;align-items:center;justify-content:center;padding:18px}
+  #hist-overlay.hidden{display:none}
+  #hist-list{display:flex;flex-direction:column;gap:10px;max-height:48vh;overflow-y:auto}
+  .hist-row{border:1px solid var(--border);border-radius:10px;padding:10px 13px}
+  .hist-head{display:flex;justify-content:space-between;gap:10px;font-size:13.5px}
+  .hist-head span{color:var(--muted);font-size:12px;white-space:nowrap}
+  .hist-files{color:var(--muted-2);font-size:11.5px;margin-top:5px;line-height:1.45;
+    display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
   .drop h2{margin:0 0 6px;font-size:18px;font-weight:600}
   .drop p{margin:0;color:var(--muted);font-size:13.5px}
   .drop .ic{font-size:30px;display:block;margin-bottom:10px;opacity:.85}
@@ -192,7 +201,24 @@
     <span class="device"><span class="dot"></span> Profil <b id="dev-name">Libra Colour</b> · <b id="dev-res">1264×1680</b></span>
     <button id="install-btn" class="install-chip hidden" type="button">⤓ Installer l'app</button>
     <button id="help-btn" class="install-chip" type="button" title="Guide d'utilisation">? Aide</button>
+    <button id="hist-btn" class="install-chip" type="button" title="Historique des conversions (synchronisable entre appareils via Drive)">🕘 Historique</button>
   </header>
+
+  <!-- Historique des conversions -->
+  <div id="hist-overlay" class="hidden">
+    <div class="help-panel">
+      <div class="help-head">
+        <h3>Historique des conversions</h3>
+        <button id="hist-close" type="button" aria-label="Fermer">✕</button>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
+        <button class="ra-btn" id="hist-sync" type="button" title="Fusionne l'historique de cet appareil avec le fichier « shiori-historique.json » de ton Drive">⇅ Synchroniser via Drive</button>
+        <button class="ra-btn" id="hist-clear" type="button">Vider (local)</button>
+      </div>
+      <div id="hist-list"></div>
+      <p class="help-note">La synchro garde le même historique sur tous tes appareils : chaque appareil fusionne le sien avec le fichier <code>shiori-historique.json</code> de ton Drive. Synchronise après tes conversions (c'est automatique quand tu convertis vers Drive).</p>
+    </div>
+  </div>
 
   <!-- Aide / première visite -->
   <div id="help-overlay" class="hidden">
@@ -313,6 +339,9 @@
         <label class="toggle"><input type="checkbox" id="sharpen"><span class="sw"></span>
           <span class="stack">Renforcer la netteté<span class="desc">Trait plus net sur l'e-ink (après réduction)</span></span></label>
 
+        <label class="toggle"><input type="checkbox" id="webtoon" checked><span class="sw"></span>
+          <span class="stack">Découper les webtoons<span class="desc">Bandes verticales → pages, coupées entre les cases</span></span></label>
+
         <div class="field" style="margin-top:17px">
           <label class="lbl" for="gamma">Gamma <span class="val" id="gamma-v">1.00</span></label>
           <input type="range" id="gamma" min="0.5" max="1.6" step="0.05" value="1">
@@ -321,6 +350,16 @@
         <div class="field">
           <label class="lbl" for="quality">Qualité JPEG <span class="val" id="quality-v">85</span></label>
           <input type="range" id="quality" min="55" max="100" step="1" value="85">
+        </div>
+
+        <div class="field" style="margin-top:16px;border-top:1px solid var(--border);padding-top:14px">
+          <label class="lbl">Profil « bibliothèque »</label>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <button class="ra-btn" id="cfg-export" type="button" title="Télécharge un petit fichier avec tous tes réglages + modèle de nom + config Drive">⇩ Exporter</button>
+            <button class="ra-btn" id="cfg-import" type="button" title="Recharge un profil exporté (autre appareil, autre navigateur)">⇧ Importer</button>
+            <input type="file" id="cfg-file" accept=".json,application/json" class="hidden">
+          </div>
+          <div class="desc" style="font-size:11.5px;color:var(--muted-2);margin-top:6px">Configure un nouvel appareil en 5 s : exporte ici, importe là-bas.</div>
         </div>
       </div>
 
@@ -385,7 +424,7 @@ const els = {
   preset:$("preset"),
   colormode:$("colormode"), rtl:$("rtl"), dblmode:$("dblmode"), rotdir:$("rotdir"), rotdirField:$("rotdir-field"),
   rename:$("rename"), renameField:$("rename-field"), renametpl:$("renametpl"), renamePreview:$("rename-preview"),
-  levels:$("levels"), trim:$("trim"), sharpen:$("sharpen"),
+  levels:$("levels"), trim:$("trim"), sharpen:$("sharpen"), webtoon:$("webtoon"),
   gamma:$("gamma"), gammaV:$("gamma-v"), quality:$("quality"), qualityV:$("quality-v"),
   prev:$("prev"), next:$("next"), pgLabel:$("pg-label"),
   koboScreen:$("kobo-screen"), koboStatus:$("kobo-status"), rtlInd:$("rtl-ind"),
@@ -409,14 +448,14 @@ function opts(){
     tw:d.w, th:d.h,
     colorMode:els.colormode.value, rtl:els.rtl.checked,
     dblmode:els.dblmode.value, rotdir:els.rotdir.value,
-    levels:els.levels.checked, trim:els.trim.checked, sharpen:els.sharpen.checked,
+    levels:els.levels.checked, trim:els.trim.checked, sharpen:els.sharpen.checked, webtoon:els.webtoon.checked,
     gamma:+els.gamma.value, quality:+els.quality.value/100,
   };
 }
 
 /* ---------- Réglages mémorisés (localStorage) ---------- */
 const LS_KEY="shiori_settings_v1";
-const SETTINGS_IDS=["preset","profile","cw","ch","colormode","rtl","dblmode","rotdir","rename","renametpl","levels","trim","sharpen","gamma","quality"];
+const SETTINGS_IDS=["preset","profile","cw","ch","colormode","rtl","dblmode","rotdir","rename","renametpl","levels","trim","sharpen","webtoon","gamma","quality"];
 function saveSettings(){
   try{
     const s={};
@@ -813,8 +852,46 @@ function buildProcessor(makeCanvas, toBlob){
     return cv;
   }
 
-  // Renvoie 1, 2 ou 3 canvases selon le mode double-page
+  // Webtoon : une bande verticale (hauteur >> largeur) est découpée en pages à
+  // la taille de l'écran, en plaçant chaque coupe sur la ligne la plus « vide »
+  // autour de la position idéale (pour ne pas couper une case ou une bulle).
+  function splitStrip(bmp,o){
+    const sliceH=Math.max(1,Math.round(bmp.width*o.th/o.tw));
+    const PW=24, PH=Math.min(4096,bmp.height);
+    const c=makeCanvas(PW,PH), cx=c.getContext("2d",{willReadFrequently:true});
+    cx.drawImage(bmp,0,0,PW,PH);
+    const d=cx.getImageData(0,0,PW,PH).data;
+    const ink=new Float32Array(PH);          // « encre » par ligne (0 = blanc)
+    for(let y=0;y<PH;y++){ let s=0;
+      for(let x=0;x<PW;x++){ const i=(y*PW+x)*4; s+=765-d[i]-d[i+1]-d[i+2]; }
+      ink[y]=s;
+    }
+    const toProf=y=>Math.min(PH-1,Math.max(0,Math.round(y*PH/bmp.height)));
+    const oSlice=Object.assign({},o,{trim:false}); // pas de rognage par tranche
+    const out=[];
+    let y=0;
+    const stepSrc=Math.max(1,Math.round(bmp.height/PH));
+    while(y<bmp.height-2){
+      let end=y+sliceH;
+      if(end>=bmp.height-sliceH*0.3){ end=bmp.height; } // dernière tranche : tout prendre
+      else{
+        const win=Math.round(sliceH*0.18);
+        let best=end, bestInk=Infinity;
+        for(let yy=end-win; yy<=Math.min(bmp.height-1,end+win); yy+=stepSrc){
+          const v=ink[toProf(yy)];
+          if(v<bestInk){ bestInk=v; best=yy; }
+        }
+        end=best;
+      }
+      out.push(renderRegion(bmp,0,y,bmp.width,end-y,oSlice));
+      y=end;
+    }
+    return out;
+  }
+
+  // Renvoie 1..N canvases selon le mode double-page / webtoon
   function processBitmap(bmp,o){
+    if(o.webtoon && bmp.height>bmp.width*2.2) return splitStrip(bmp,o);
     const isSpread=bmp.width>bmp.height*1.15;
     if(!isSpread || o.dblmode==="keep") return [renderRegion(bmp,0,0,bmp.width,bmp.height,o)];
     const cw=o.rotdir==="cw";
@@ -936,6 +1013,7 @@ async function renderPreview(){
 function deviceLabel(o,isSpread,n,sub,gray){
   const tone = o.colorMode==="auto" ? (gray?" · gris":" · couleur")
             : (o.colorMode==="color" ? " · couleur" : " · gris");
+  if(!isSpread && n>1) return `<b>webtoon</b> → page ${sub+1}/${n}${tone}`;
   if(!isSpread || o.dblmode==="keep") return `${o.tw}×${o.th}${tone} — page simple`;
   if(o.dblmode==="rotate") return `<b>planche large</b> → pivotée en paysage${tone}`;
   if(o.dblmode==="split")  return `<b>planche large</b> → moitié ${sub+1}/2${tone}`;
@@ -1047,6 +1125,7 @@ async function runConvert(sink){
   };
 
   let skipped=0;
+  const convertedNames=[];
   for(let j=0;j<nJobs;j++){
     const job=state.jobs[j];
     const base=outputBaseName(job);
@@ -1112,6 +1191,7 @@ async function runConvert(sink){
         await sink.write(filename,cbz);
         state.outputs.push({filename, blob:null, pageCount:outCount, saved:true});
         addResult(filename, null, outCount);
+        convertedNames.push(filename);
       }catch(e){
         els.progTxt.textContent="Écriture interrompue ("+sink.label+") : "+e.message+" — relance pour reprendre où ça s'est arrêté.";
         els.convert.disabled=false; els.reset.disabled=false;
@@ -1123,11 +1203,15 @@ async function runConvert(sink){
     }else{
       state.outputs.push({filename, blob:cbz, pageCount:outCount});
       addResult(filename, cbz, outCount);
+      convertedNames.push(filename);
     }
     await new Promise(r=>setTimeout(r,0)); // laisse respirer le GC entre les tomes
   }
   const conv=nJobs-skipped;
   state.report={...stats, tomes:conv, skipped, secs:(Date.now()-t0)/1000, sinkLabel:sink?sink.label:null};
+  recordHistory(convertedNames, stats.grayPages+stats.colorPages, sink?sink.label:null);
+  // En mode Drive on a déjà un jeton : on en profite pour synchroniser l'historique.
+  if(sink && sink.kind==="drive") syncHistoryWithDrive().catch(()=>{});
   els.progTxt.textContent = sink
     ? `Terminé ✓ — ${conv} tome${conv>1?"s":""} écrit${conv>1?"s":""} dans ${sink.label}${skipped?` · ${skipped} déjà présent${skipped>1?"s":""} (ignoré${skipped>1?"s":""})`:""}`
     : `Terminé ✓ — ${nJobs} tome${nJobs>1?"s":""}`;
@@ -1504,7 +1588,7 @@ els.profile.addEventListener("change",()=>{
 
 // colour / toggles / sliders
 els.colormode.addEventListener("change",schedulePreview);
-["rtl","levels","trim","sharpen"].forEach(k=>els[k].addEventListener("change",schedulePreview));
+["rtl","levels","trim","sharpen","webtoon"].forEach(k=>els[k].addEventListener("change",schedulePreview));
 function syncRotDir(){
   const m=els.dblmode.value;
   els.rotdirField.classList.toggle("hidden", !(m==="rotate"||m==="both"));
@@ -1532,6 +1616,139 @@ helpOverlay.addEventListener("click",(e)=>{ if(e.target===helpOverlay) closeHelp
 document.addEventListener("keydown",(e)=>{ if(e.key==="Escape"&&!helpOverlay.classList.contains("hidden")) closeHelp(); });
 // Première visite : on montre le guide une fois.
 try{ if(!localStorage.getItem("shiori_help_seen")) openHelp(); }catch(e){}
+
+/* ---------- Profil « bibliothèque » (export / import de la config) ---------- */
+$("cfg-export").addEventListener("click",()=>{
+  saveSettings(); // fige l'état courant
+  const cfg={ _shiori:1,
+    settings: JSON.parse(localStorage.getItem(LS_KEY)||"{}"),
+    gclient:  localStorage.getItem("shiori_gclient")||"",
+    gapikey:  localStorage.getItem("shiori_gapikey")||"" };
+  const a=document.createElement("a");
+  a.href=URL.createObjectURL(new Blob([JSON.stringify(cfg,null,2)],{type:"application/json"}));
+  a.download="shiori-config.json"; a.click();
+  setTimeout(()=>URL.revokeObjectURL(a.href),4000);
+});
+$("cfg-import").addEventListener("click",()=>$("cfg-file").click());
+$("cfg-file").addEventListener("change",async(e)=>{
+  const f=e.target.files[0]; e.target.value="";
+  if(!f) return;
+  try{
+    const cfg=JSON.parse(await f.text());
+    if(!cfg || cfg._shiori==null) throw new Error("format");
+    if(cfg.settings) localStorage.setItem(LS_KEY, JSON.stringify(cfg.settings));
+    if(cfg.gclient && CLIENT_ID_RE.test(cfg.gclient)) localStorage.setItem("shiori_gclient", cfg.gclient);
+    if(cfg.gapikey && API_KEY_RE.test(cfg.gapikey))   localStorage.setItem("shiori_gapikey", cfg.gapikey);
+    loadSettings();
+    els.gammaV.textContent=(+els.gamma.value).toFixed(2);
+    els.qualityV.textContent=els.quality.value;
+    updateRenamePreview(); schedulePreview();
+    alert("Profil importé ✓ — réglages et config Drive appliqués.");
+  }catch(err){ alert("Fichier de profil invalide."); }
+});
+
+/* ---------- Historique des conversions (synchronisé via Drive) ----------
+   Local d'abord (localStorage) ; un fichier « shiori-historique.json » sur ton
+   Drive sert de point de rencontre entre appareils : à chaque synchro on
+   fusionne local + distant (par id) et on réécrit les deux. */
+const HIST_KEY="shiori_history_v1", HIST_FILE="shiori-historique.json";
+function loadHistory(){ try{ const h=JSON.parse(localStorage.getItem(HIST_KEY)||"[]"); return Array.isArray(h)?h:[]; }catch(e){ return []; } }
+function saveHistory(h){ try{ localStorage.setItem(HIST_KEY, JSON.stringify(h)); }catch(e){} }
+function deviceName(){
+  return (navigator.userAgentData&&navigator.userAgentData.platform)||navigator.platform||"appareil";
+}
+function recordHistory(names,pages,dest){
+  if(!names.length) return;
+  const h=loadHistory();
+  h.unshift({ id:Date.now().toString(36)+"-"+Math.random().toString(36).slice(2,7),
+    date:new Date().toISOString(), device:deviceName(), dest:dest||"téléchargement",
+    tomes:names, pages });
+  saveHistory(h.slice(0,300));
+}
+async function ensureDriveAuth(){
+  if(!driveClientId()){
+    const cid=(prompt("Synchronisation Drive — colle ton ID CLIENT OAuth\n(…apps.googleusercontent.com). Mémorisé ensuite.")||"").trim();
+    if(!cid) return false;
+    if(!CLIENT_ID_RE.test(cid)){ alert("ID client invalide (il finit par .apps.googleusercontent.com)."); return false; }
+    localStorage.setItem("shiori_gclient", cid);
+  }
+  if(!driveReady()){ alert("Le service Google ne s'est pas chargé."); return false; }
+  await getDriveToken();
+  return true;
+}
+async function findHistoryFile(){
+  const q=encodeURIComponent(`name='${HIST_FILE}' and trashed=false`);
+  const r=await fetch(`https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id)`,
+    {headers:{Authorization:"Bearer "+driveToken}});
+  if(!r.ok) throw new Error("recherche "+r.status);
+  const j=await r.json();
+  return (j.files&&j.files.length)?j.files[0].id:null;
+}
+async function syncHistoryWithDrive(){
+  const fileId=await findHistoryFile();
+  let remote=[];
+  if(fileId){
+    const r=await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`,
+      {headers:{Authorization:"Bearer "+driveToken}});
+    if(r.ok){ try{ const j=await r.json(); if(Array.isArray(j)) remote=j; }catch(e){} }
+  }
+  const seen=new Set(), merged=[];
+  for(const e of [...loadHistory(),...remote]){
+    if(e&&e.id&&!seen.has(e.id)){ seen.add(e.id); merged.push(e); }
+  }
+  merged.sort((a,b)=>String(b.date).localeCompare(String(a.date)));
+  const capped=merged.slice(0,300);
+  saveHistory(capped);
+  const body=JSON.stringify(capped);
+  if(fileId){
+    const r=await fetch(`https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=media`,
+      {method:"PATCH",headers:{Authorization:"Bearer "+driveToken,"Content-Type":"application/json"},body});
+    if(!r.ok) throw new Error("mise à jour "+r.status);
+  }else{
+    const form=new FormData();
+    form.append("metadata",new Blob([JSON.stringify({name:HIST_FILE})],{type:"application/json"}));
+    form.append("file",new Blob([body],{type:"application/json"}));
+    const r=await fetch("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart",
+      {method:"POST",headers:{Authorization:"Bearer "+driveToken},body:form});
+    if(!r.ok) throw new Error("création "+r.status);
+  }
+  return capped.length;
+}
+function renderHistory(){
+  const list=$("hist-list"), h=loadHistory();
+  if(!h.length){ list.innerHTML=`<p class="help-note" style="border:0;margin:0;padding:0">Aucune conversion enregistrée pour l'instant.</p>`; return; }
+  list.innerHTML="";
+  for(const e of h.slice(0,100)){
+    const row=document.createElement("div");
+    row.className="hist-row";
+    row.innerHTML=`<div class="hist-head"><b></b><span></span></div><div class="hist-files"></div>`;
+    row.querySelector("b").textContent=`${e.tomes.length} tome${e.tomes.length>1?"s":""}${e.pages?` · ${e.pages} pages`:""} → ${e.dest}`;
+    row.querySelector("span").textContent=new Date(e.date).toLocaleString("fr-FR",{dateStyle:"short",timeStyle:"short"})+(e.device?` · ${e.device}`:"");
+    row.querySelector(".hist-files").textContent=e.tomes.join(" · ");
+    list.appendChild(row);
+  }
+}
+const histOverlay=$("hist-overlay");
+$("hist-btn").addEventListener("click",()=>{ renderHistory(); histOverlay.classList.remove("hidden"); });
+$("hist-close").addEventListener("click",()=>histOverlay.classList.add("hidden"));
+histOverlay.addEventListener("click",(e)=>{ if(e.target===histOverlay) histOverlay.classList.add("hidden"); });
+$("hist-sync").addEventListener("click",async()=>{
+  const btn=$("hist-sync"), old=btn.textContent;
+  btn.disabled=true; btn.textContent="Synchronisation…";
+  try{
+    if(await ensureDriveAuth()){
+      const n=await syncHistoryWithDrive();
+      renderHistory();
+      btn.textContent=`✓ Synchronisé (${n} entrées)`;
+    }else btn.textContent=old;
+  }catch(e){ alert("Synchro impossible : "+e.message); btn.textContent=old; }
+  setTimeout(()=>{ btn.textContent=old; btn.disabled=false; },3500);
+});
+$("hist-clear").addEventListener("click",()=>{
+  if(confirm("Vider l'historique local ? (le fichier Drive n'est pas touché — une synchro le rapatriera)")){
+    saveHistory([]); renderHistory();
+  }
+});
 
 /* ---------- Préréglages (1 clic → jeu de réglages cohérent) ---------- */
 const PRESETS={
