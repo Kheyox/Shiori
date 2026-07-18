@@ -256,6 +256,18 @@
     <input type="file" id="file" multiple accept=".cbz,.zip,.cbr,.rar,.pdf,.epub,application/pdf,application/epub+zip,image/*" class="hidden">
   </div>
 
+  <!-- File d'attente : plusieurs lots, chacun avec ses réglages, lancés d'un coup -->
+  <div id="queue-panel" class="notice hidden" style="margin-bottom:16px">
+    <b>🗂 File d'attente</b> <span id="q-count"></span>
+    <div id="q-list" style="display:flex;flex-direction:column;gap:8px;margin-top:10px"></div>
+    <div class="n-actions">
+      <button class="ra-btn" id="q-run">▶ Tout convertir</button>
+      <button class="ra-btn hidden" id="q-run-dir">▶ Tout → dossier</button>
+      <button class="ra-btn" id="q-run-drive">▶ Tout → Drive</button>
+      <button class="ra-btn" id="q-clear">Vider la file</button>
+    </div>
+  </div>
+
   <div id="workspace" class="hidden">
     <div class="grid">
       <!-- Settings -->
@@ -395,6 +407,7 @@
       <button class="btn" id="convert">Convertir</button>
       <button class="btn ghost hidden" id="convert-dir" title="Choisis un dossier ; chaque tome y est écrit dès qu'il est prêt (mémoire minimale, idéal gros lots / Kobo branchée)">Convertir → dossier</button>
       <button class="btn ghost" id="convert-drive" title="Chaque tome part sur Drive dès qu'il est prêt ; les tomes déjà présents sont ignorés (reprise)">Convertir → Drive</button>
+      <button class="btn ghost" id="add-queue" title="Met ce lot de côté avec SES réglages actuels ; tu pourras préparer d'autres lots puis tout convertir d'un coup">＋ File d'attente</button>
       <button class="btn ghost" id="reset">Recommencer</button>
       <div class="prog hidden" id="prog">
         <div class="bar"><div class="fill" id="prog-fill"></div></div>
@@ -463,12 +476,21 @@ function opts(){
 /* ---------- Réglages mémorisés (localStorage) ---------- */
 const LS_KEY="shiori_settings_v1";
 const SETTINGS_IDS=["preset","profile","cw","ch","colormode","rtl","dblmode","rotdir","rename","renametpl","levels","trim","sharpen","webtoon","gamma","quality"];
+function snapshotSettings(){
+  const s={};
+  for(const id of SETTINGS_IDS){ const el=$(id); if(!el)continue; s[id]=el.type==="checkbox"?el.checked:el.value; }
+  return s;
+}
+function applySettingsObj(s){
+  if(!s) return;
+  for(const id of SETTINGS_IDS){ const el=$(id); if(!el||!(id in s))continue;
+    if(el.type==="checkbox") el.checked=!!s[id]; else el.value=s[id];
+  }
+  els.gammaV.textContent=(+els.gamma.value).toFixed(2);
+  els.qualityV.textContent=els.quality.value;
+}
 function saveSettings(){
-  try{
-    const s={};
-    for(const id of SETTINGS_IDS){ const el=$(id); if(!el)continue; s[id]=el.type==="checkbox"?el.checked:el.value; }
-    localStorage.setItem(LS_KEY, JSON.stringify(s));
-  }catch(e){}
+  try{ localStorage.setItem(LS_KEY, JSON.stringify(snapshotSettings())); }catch(e){}
 }
 function loadSettings(){
   let s; try{ s=JSON.parse(localStorage.getItem(LS_KEY)||"null"); }catch(e){ s=null; }
@@ -550,6 +572,19 @@ function importProgress(cur,total,name){
 }
 
 async function handleFiles(fileList){
+  const {jobs,failed}=await buildJobsFromFiles(fileList);
+  importProgress(null);
+  if(!jobs.length && !state.jobs.length){ alert("Aucune image trouvée dans les fichiers déposés."); return; }
+  if(failed) alert(failed+" archive(s) illisibles (corrompues ?) ont été ignorées. Les autres sont bien chargées.");
+  state.jobs.push(...jobs);
+  buildPreviewIndex();
+  enterWorkspace();
+}
+
+// Construit des jobs depuis une liste de fichiers, sans toucher à l'état global.
+// Utilisé par l'import direct ET par la file d'attente restaurée (IndexedDB).
+async function buildJobsFromFiles(fileList){
+  const jobs=[];
   const files=[...fileList];
   const archives=files.filter(f=>/\.(cbz|zip)$/i.test(f.name)).sort((a,b)=>natSort(a.name,b.name));
   const pdfs=files.filter(f=>/\.pdf$/i.test(f.name)||f.type==="application/pdf").sort((a,b)=>natSort(a.name,b.name));
@@ -569,7 +604,7 @@ async function handleFiles(fileList){
       const names=await epubImageOrder(zip);
       if(names.length){
         const base=ef.name.replace(/\.epub$/i,"");
-        state.jobs.push({ name:base, rawName:base, file:ef, pageNames:names,
+        jobs.push({ name:base, rawName:base, file:ef, pageNames:names,
           pages:names.map(n=>({name:n.split("/").pop()})) });
       }
     }catch(err){ failed++; console.error("epub fail",ef.name,err); }
@@ -587,7 +622,7 @@ async function handleFiles(fileList){
         .sort((a,b)=>natSort(a.full,b.full));
       if(imgs.length){
         const base=rf.name.replace(/\.(cbr|rar)$/i,"");
-        state.jobs.push({ name:base, rawName:base, file:rf, rar:true,
+        jobs.push({ name:base, rawName:base, file:rf, rar:true,
           pages: imgs.map(e=>({name:e.full.split("/").pop()})) });
       }
       if(archive.close){ try{ await archive.close(); }catch(e){} }  // rouvert à la demande
@@ -601,7 +636,7 @@ async function handleFiles(fileList){
       const doc=await pdfjsLib.getDocument({data:await pdf.arrayBuffer()}).promise;
       const n=doc.numPages;
       const base=pdf.name.replace(/\.pdf$/i,"");
-      state.jobs.push({ name:base, rawName:base, file:null, srcSize:pdf.size, pdfDoc:doc, pdfPages:n,
+      jobs.push({ name:base, rawName:base, file:null, srcFile:pdf, srcSize:pdf.size, pdfDoc:doc, pdfPages:n,
         pages:Array.from({length:n},(_,i)=>({name:"p"+String(i+1).padStart(3,"0")})) });
     }catch(err){ failed++; console.error("pdf fail",pdf.name,err); }
   }
@@ -615,7 +650,7 @@ async function handleFiles(fileList){
         .sort(natSort);
       if(names.length){
         const base=cleanName(arc.name);
-        state.jobs.push({ name:base, rawName:base, file:arc, pageNames:names,
+        jobs.push({ name:base, rawName:base, file:arc, pageNames:names,
           pages:names.map(n=>({name:n.split("/").pop()})) });
       }
       // zip hors scope à l'itération suivante ⇒ mémoire libérée avant l'archive d'après
@@ -624,15 +659,11 @@ async function handleFiles(fileList){
 
   if(loose.length){
     const sorted=loose.sort((a,b)=>natSort(a.name,b.name));
-    state.jobs.push({ name:"images", rawName:"images", file:null,
+    jobs.push({ name:"images", rawName:"images", file:null,
       pages:sorted.map(f=>({name:f.name, blob:f})) });
   }
 
-  importProgress(null);
-  if(!state.jobs.length){ alert("Aucune image trouvée dans les fichiers déposés."); return; }
-  if(failed) alert(failed+" archive(s) illisibles (corrompues ?) ont été ignorées. Les autres sont bien chargées.");
-  buildPreviewIndex();
-  enterWorkspace();
+  return {jobs, failed};
 }
 function cleanName(n){ return n.replace(/\.(cbz|zip)$/i,""); }
 
@@ -1113,14 +1144,13 @@ window.addEventListener("beforeunload",(e)=>{
   if(converting){ e.preventDefault(); e.returnValue="Conversion en cours — elle sera perdue si tu quittes."; }
 });
 
-async function runConvert(sink){
+async function runConvert(sink,append){
   converting=true; acquireWakeLock();
   els.convert.disabled=true; els.reset.disabled=true;
   if(els.convertDir) els.convertDir.disabled=true;
   if(els.convertDrive) els.convertDrive.disabled=true;
   els.prog.classList.remove("hidden");
-  els.results.innerHTML="";
-  state.outputs=[];
+  if(!append){ els.results.innerHTML=""; state.outputs=[]; }
   state.streamed=!!sink;   // écriture au fil de l'eau (rien gardé en mémoire)
   state.sinkKind=sink?sink.kind:null;
   state.report=null;
@@ -1241,7 +1271,7 @@ async function runConvert(sink){
     ? `Terminé ✓ — ${conv} tome${conv>1?"s":""} écrit${conv>1?"s":""} dans ${sink.label}${skipped?` · ${skipped} déjà présent${skipped>1?"s":""} (ignoré${skipped>1?"s":""})`:""}`
     : `Terminé ✓ — ${nJobs} tome${nJobs>1?"s":""}`;
   els.progFill.style.width="100%";
-  renderResultsHeader();
+  if(!append) renderResultsHeader();   // en file d'attente, le récap global vient à la fin
   els.convert.disabled=false; els.reset.disabled=false;
   if(els.convertDir) els.convertDir.disabled=false;
   if(els.convertDrive) els.convertDrive.disabled=false;
@@ -1410,7 +1440,12 @@ function addResult(filename, blob, pageCount, note){
    crée une clé API. ID client + clé API sont collés une fois puis mémorisés.
    Scope drive : nécessaire pour parcourir l'arborescence et écrire dans le
    dossier que TU choisis. */
+/* Ces deux valeurs ne sont PAS des secrets : elles sont publiques par nature et
+   verrouillées côté Google sur ton domaine (origines autorisées / restrictions
+   de la clé). Les renseigner ici évite d'avoir à les coller sur chaque
+   appareil — il ne reste alors que la connexion Google normale. */
 const GOOGLE_CLIENT_ID = ""; // ex: "xxxxx.apps.googleusercontent.com"
+const GOOGLE_API_KEY   = ""; // ex: "AIza…" (sélecteur de dossier)
 const DRIVE_SCOPE = "https://www.googleapis.com/auth/drive";
 let driveToken=null, driveTokenClient=null;
 
@@ -1424,7 +1459,7 @@ function driveClientId(){
   return CLIENT_ID_RE.test(v) ? v : "";
 }
 function driveApiKey(){
-  const v = localStorage.getItem("shiori_gapikey") || "";
+  const v = GOOGLE_API_KEY || localStorage.getItem("shiori_gapikey") || "";
   return API_KEY_RE.test(v) ? v : "";
 }
 
@@ -1889,6 +1924,155 @@ $("hist-clear").addEventListener("click",()=>{
     saveHistory([]); renderHistory();
   }
 });
+
+/* ---------- File d'attente ----------
+   Chaque lot est mis de côté avec SES réglages ; on prépare plusieurs sagas
+   puis on convertit tout d'un coup vers une même destination. Persistante :
+   fichiers + réglages sont stockés dans IndexedDB et survivent à un
+   rechargement (les lots restaurés sont ré-importés au lancement). */
+let queue=[], qRunning=false, qdb=null;
+function qIdb(){
+  return new Promise((res,rej)=>{
+    if(qdb) return res(qdb);
+    if(!("indexedDB" in window)) return rej(new Error("noidb"));
+    const r=indexedDB.open("shiori",1);
+    r.onupgradeneeded=()=>{ r.result.createObjectStore("queue",{keyPath:"id"}); };
+    r.onsuccess=()=>{ qdb=r.result; res(qdb); };
+    r.onerror=()=>rej(r.error);
+  });
+}
+async function qPersist(e){
+  const db=await qIdb();
+  const rec={id:e.id,label:e.label,settings:e.settings,files:e.files,tomes:e.tomes,pages:e.pages,preset:e.preset};
+  return new Promise((res,rej)=>{
+    const tx=db.transaction("queue","readwrite");
+    tx.objectStore("queue").put(rec);
+    tx.oncomplete=res; tx.onerror=()=>rej(tx.error);
+  });
+}
+async function qDelete(id){
+  try{
+    const db=await qIdb();
+    await new Promise((res,rej)=>{ const tx=db.transaction("queue","readwrite");
+      tx.objectStore("queue").delete(id); tx.oncomplete=res; tx.onerror=()=>rej(tx.error); });
+  }catch(e){}
+}
+async function qRestore(){
+  try{
+    const db=await qIdb();
+    const recs=await new Promise((res,rej)=>{ const tx=db.transaction("queue","readonly");
+      const rq=tx.objectStore("queue").getAll(); rq.onsuccess=()=>res(rq.result||[]); rq.onerror=()=>rej(rq.error); });
+    for(const r of recs) queue.push({...r, jobs:null});   // jobs reconstruits au lancement
+    renderQueue();
+  }catch(e){}
+}
+function presetLabel(){
+  const o=els.preset.options[els.preset.selectedIndex];
+  return o?o.textContent:"réglages manuels";
+}
+function entryFilesFromJobs(){
+  const files=[];
+  for(const job of state.jobs){
+    if(job.merged){ job.parts.forEach(p=>{ if(p.file) files.push(p.file); else p.pages.forEach(pg=>files.push(pg.blob)); }); }
+    else if(job.file) files.push(job.file);
+    else if(job.srcFile) files.push(job.srcFile);
+    else job.pages.forEach(pg=>files.push(pg.blob));
+  }
+  return files;
+}
+function addToQueue(){
+  if(!state.jobs.length) return;
+  saveSettings();
+  const first=state.jobs[0];
+  const {series}=parseName(first.rawName||first.name);
+  const entry={
+    id:Date.now().toString(36)+"-"+Math.random().toString(36).slice(2,6),
+    label:(series||first.name).slice(0,60),
+    settings:snapshotSettings(), preset:presetLabel(),
+    jobs:state.jobs, files:entryFilesFromJobs(),
+    tomes:state.jobs.length, pages:state.flatPreview.length,
+  };
+  queue.push(entry);
+  qPersist(entry).catch(()=>{});   // si le stockage échoue, la file reste valable en mémoire
+  // retour à la zone de dépôt, la file reste affichée
+  state.jobs=[]; state.flatPreview=[]; state.previewPos=0;
+  releaseZip();
+  els.file.value="";
+  $("dup-banner").classList.add("hidden"); $("merge-banner").classList.add("hidden");
+  els.workspace.classList.add("hidden"); els.drop.classList.remove("hidden");
+  renderQueue();
+}
+function renderQueue(){
+  const panel=$("queue-panel"), list=$("q-list");
+  if(!queue.length){ panel.classList.add("hidden"); return; }
+  $("q-count").textContent=`— ${queue.length} lot${queue.length>1?"s":""} en attente`;
+  list.innerHTML="";
+  queue.forEach((e)=>{
+    const row=document.createElement("div");
+    row.className="hist-row";
+    row.innerHTML=`<div class="hist-head"><b></b><span></span></div>`;
+    row.querySelector("b").textContent=`${e.label} — ${e.tomes} volume${e.tomes>1?"s":""} · ${e.pages} pages`;
+    row.querySelector("span").textContent=e.preset+(e.jobs?"":" · restauré");
+    if(!qRunning){
+      const del=document.createElement("button");
+      del.className="ra-btn"; del.style.marginLeft="10px"; del.textContent="✕";
+      del.title="Retirer ce lot de la file";
+      del.onclick=()=>{ queue=queue.filter(x=>x.id!==e.id); qDelete(e.id); renderQueue(); };
+      row.querySelector(".hist-head").appendChild(del);
+    }
+    list.appendChild(row);
+  });
+  ["q-run","q-run-dir","q-run-drive","q-clear"].forEach(id=>{ $(id).disabled=qRunning; });
+  if(window.showDirectoryPicker) $("q-run-dir").classList.remove("hidden");
+  panel.classList.remove("hidden");
+}
+async function runQueue(sinkFactory){
+  if(!queue.length||qRunning) return;
+  let sink=null;
+  if(sinkFactory){
+    try{ sink=await sinkFactory(); }catch(e){ alert("Destination : "+e.message); return; }
+    if(!sink) return; // annulé
+  }
+  qRunning=true; renderQueue();
+  els.drop.classList.add("hidden"); els.workspace.classList.remove("hidden");
+  const agg={inBytes:0,outBytes:0,colorPages:0,grayPages:0,spreads:0,outPages:0,tomes:0,skipped:0,secs:0,
+             sinkLabel:sink?sink.label:null};
+  let first=true;
+  while(queue.length){
+    const entry=queue[0];
+    applySettingsObj(entry.settings);
+    updateRenamePreview();
+    if(entry.jobs) state.jobs=entry.jobs;
+    else{ state.jobs=(await buildJobsFromFiles(entry.files)).jobs; importProgress(null); }
+    buildPreviewIndex();
+    if(!state.jobs.length){ queue.shift(); qDelete(entry.id); renderQueue(); continue; }
+    els.jobCount.textContent=`File : ${entry.label} · ${state.jobs.length} volume${state.jobs.length>1?"s":""}`;
+    await runConvert(sink,!first); first=false;
+    if(state.report) for(const k of ["inBytes","outBytes","colorPages","grayPages","spreads","outPages","tomes","skipped","secs"]) agg[k]+=state.report[k]||0;
+    queue.shift(); qDelete(entry.id); renderQueue();
+  }
+  state.report=agg;
+  renderResultsHeader();   // récap global (tous lots confondus)
+  qRunning=false; renderQueue();
+  loadSettings();          // revient à tes réglages mémorisés
+}
+$("add-queue").addEventListener("click",addToQueue);
+$("q-clear").addEventListener("click",()=>{
+  if(!qRunning && confirm("Vider la file d'attente ?")){
+    queue.forEach(e=>qDelete(e.id)); queue=[]; renderQueue();
+  }
+});
+$("q-run").addEventListener("click",()=>runQueue(null));
+$("q-run-dir").addEventListener("click",()=>runQueue(async()=>{
+  try{ return makeDirSink(await window.showDirectoryPicker({mode:"readwrite"})); }
+  catch(e){ return null; } // annulé
+}));
+$("q-run-drive").addEventListener("click",()=>runQueue(async()=>{
+  const dest=await driveConnect(()=>{});
+  if(!dest) return null;
+  return makeDriveSink(dest.folderId,dest.folderName);
+}));
+qRestore();
 
 /* ---------- Préréglages (1 clic → jeu de réglages cohérent) ---------- */
 const PRESETS={
