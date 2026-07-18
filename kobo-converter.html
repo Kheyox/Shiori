@@ -64,6 +64,19 @@
   .drop:hover,.drop.hot{border-color:var(--ink);background:var(--surface-2)}
   .drop.busy{border-color:var(--ink);pointer-events:none;animation:pulse 1.2s ease-in-out infinite}
   @keyframes pulse{0%,100%{opacity:1}50%{opacity:.55}}
+  /* Aide */
+  #help-overlay{position:fixed;inset:0;z-index:9998;background:rgba(0,0,0,.55);
+    display:flex;align-items:center;justify-content:center;padding:18px}
+  #help-overlay.hidden{display:none}
+  .help-panel{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);
+    max-width:640px;max-height:85vh;overflow-y:auto;padding:22px 26px;box-shadow:0 12px 48px rgba(0,0,0,.5)}
+  .help-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+  .help-head h3{margin:0}
+  .help-head button{background:none;border:0;color:var(--muted);font-size:18px;cursor:pointer;padding:4px 8px}
+  .help-head button:hover{color:var(--text)}
+  .help-steps{margin:10px 0;padding-left:20px;display:flex;flex-direction:column;gap:12px;font-size:14px;line-height:1.55}
+  .help-steps ul{margin:6px 0 0;padding-left:18px;display:flex;flex-direction:column;gap:4px}
+  .help-note{font-size:12.5px;color:var(--muted);border-top:1px solid var(--border);padding-top:12px;margin-top:6px;line-height:1.5}
   .drop h2{margin:0 0 6px;font-size:18px;font-weight:600}
   .drop p{margin:0;color:var(--muted);font-size:13.5px}
   .drop .ic{font-size:30px;display:block;margin-bottom:10px;opacity:.85}
@@ -178,7 +191,31 @@
     <span class="tag">CBZ / ZIP / images → Kobo</span>
     <span class="device"><span class="dot"></span> Profil <b id="dev-name">Libra Colour</b> · <b id="dev-res">1264×1680</b></span>
     <button id="install-btn" class="install-chip hidden" type="button">⤓ Installer l'app</button>
+    <button id="help-btn" class="install-chip" type="button" title="Guide d'utilisation">? Aide</button>
   </header>
+
+  <!-- Aide / première visite -->
+  <div id="help-overlay" class="hidden">
+    <div class="help-panel">
+      <div class="help-head">
+        <h3>Comment utiliser Shiori</h3>
+        <button id="help-close" type="button" aria-label="Fermer">✕</button>
+      </div>
+      <ol class="help-steps">
+        <li><b>📥 Dépose tes fichiers</b> — <code>.cbz</code> <code>.zip</code> <code>.cbr</code> <code>.pdf</code> <code>.epub</code> ou images, plusieurs tomes à la fois. Tout reste dans ton navigateur, rien n'est envoyé sur internet.</li>
+        <li><b>🎛 Ajuste</b> — choisis un <b>préréglage</b> (N&amp;B net, Couleur, Scan délavé) ou affine à la main. L'aperçu à droite montre le rendu exact sur ta Kobo ; navigue avec les flèches.</li>
+        <li><b>⚙️ Convertis</b> — trois façons :
+          <ul>
+            <li><b>Convertir</b> : résultats en mémoire, tu télécharges ensuite.</li>
+            <li><b>Convertir → dossier</b> (PC) : chaque tome est écrit direct dans un dossier de ton choix — vise le dossier de ta <b>Kobo branchée</b> !</li>
+            <li><b>Convertir → Drive</b> : chaque tome part sur Google Drive dès qu'il est prêt.</li>
+          </ul>
+          En mode dossier/Drive, les tomes <b>déjà présents sont ignorés</b> : si la conversion est interrompue, relance — elle reprend où elle en était.</li>
+        <li><b>📤 Sur ta Kobo</b> — copie les CBZ dans le dossier de la liseuse (ou récupère-les depuis Drive). Grâce aux métadonnées, les tomes d'une même saga se regroupent en une seule série.</li>
+      </ol>
+      <p class="help-note">💡 Pendant une conversion, garde l'app affichée (l'écran ne se mettra pas en veille). L'app s'installe sur PC/Android via « ⤓ Installer l'app » et marche ensuite hors-ligne. L'export Drive demande une petite config Google la première fois (voir DEPLOY.md du projet).</p>
+    </div>
+  </div>
   <p class="lede">Tout se passe dans ton navigateur — rien n'est envoyé sur internet. Fonctionne identique sur Windows, Chromebook et Android. Dépose tes mangas, ajuste, récupère un CBZ optimisé pour l'e-ink.</p>
 
   <div class="drop" id="drop">
@@ -311,6 +348,7 @@
     <div class="runbar">
       <button class="btn" id="convert">Convertir</button>
       <button class="btn ghost hidden" id="convert-dir" title="Choisis un dossier ; chaque tome y est écrit dès qu'il est prêt (mémoire minimale, idéal gros lots / Kobo branchée)">Convertir → dossier</button>
+      <button class="btn ghost" id="convert-drive" title="Chaque tome part sur Drive dès qu'il est prêt ; les tomes déjà présents sont ignorés (reprise)">Convertir → Drive</button>
       <button class="btn ghost" id="reset">Recommencer</button>
       <div class="prog hidden" id="prog">
         <div class="bar"><div class="fill" id="prog-fill"></div></div>
@@ -352,7 +390,7 @@ const els = {
   prev:$("prev"), next:$("next"), pgLabel:$("pg-label"),
   koboScreen:$("kobo-screen"), koboStatus:$("kobo-status"), rtlInd:$("rtl-ind"),
   nextSpread:$("next-spread"),
-  convert:$("convert"), convertDir:$("convert-dir"), reset:$("reset"), prog:$("prog"), progFill:$("prog-fill"), progTxt:$("prog-txt"),
+  convert:$("convert"), convertDir:$("convert-dir"), convertDrive:$("convert-drive"), reset:$("reset"), prog:$("prog"), progFill:$("prog-fill"), progTxt:$("prog-txt"),
   results:$("results"), jobCount:$("job-count"), devName:$("dev-name"), devRes:$("dev-res"),
 };
 
@@ -516,7 +554,7 @@ async function handleFiles(fileList){
       const doc=await pdfjsLib.getDocument({data:await pdf.arrayBuffer()}).promise;
       const n=doc.numPages;
       const base=pdf.name.replace(/\.pdf$/i,"");
-      state.jobs.push({ name:base, rawName:base, file:null, pdfDoc:doc, pdfPages:n,
+      state.jobs.push({ name:base, rawName:base, file:null, srcSize:pdf.size, pdfDoc:doc, pdfPages:n,
         pages:Array.from({length:n},(_,i)=>({name:"p"+String(i+1).padStart(3,"0")})) });
     }catch(err){ failed++; console.error("pdf fail",pdf.name,err); }
   }
@@ -916,6 +954,54 @@ async function mapLimit(items, limit, fn){
   return results;
 }
 
+/* ---------- Destinations d'écriture au fil de l'eau ----------
+   Une « destination » (sink) sait dire si un tome existe déjà (reprise) et
+   écrire un tome. Deux implémentations : dossier local et dossier Drive. */
+function makeDirSink(handle){
+  return {
+    kind:"dir", label:"le dossier",
+    exists: async(name)=>{ try{ const fh=await handle.getFileHandle(name); return (await fh.getFile()).size>0; }catch(e){ return false; } },
+    write:  async(name,blob)=>{ const fh=await handle.getFileHandle(name,{create:true});
+      const w=await fh.createWritable(); await w.write(blob); await w.close(); },
+  };
+}
+async function makeDriveSink(folderId,folderName){
+  // Liste une fois le contenu du dossier Drive ⇒ reprise sans requête par tome.
+  const present=new Set();
+  let pageToken="";
+  do{
+    const q=encodeURIComponent(`'${folderId}' in parents and trashed=false`);
+    const r=await fetch(`https://www.googleapis.com/drive/v3/files?q=${q}&fields=nextPageToken,files(name)&pageSize=1000`+
+      (pageToken?`&pageToken=${encodeURIComponent(pageToken)}`:""),
+      {headers:{Authorization:"Bearer "+driveToken}});
+    if(!r.ok) throw new Error("liste Drive "+r.status);
+    const j=await r.json();
+    (j.files||[]).forEach(f=>present.add(f.name));
+    pageToken=j.nextPageToken||"";
+  }while(pageToken);
+  return {
+    kind:"drive", label:`Drive / ${folderName}`,
+    exists: async(name)=>present.has(name),
+    write:  async(name,blob)=>{
+      try{ await uploadToDrive(name,blob,folderId); }
+      catch(e){
+        // Jeton expiré en cours de longue conversion : on le renouvelle et on retente.
+        if(/401/.test(String(e.message))){ await getDriveToken(); await uploadToDrive(name,blob,folderId); }
+        else throw e;
+      }
+    },
+  };
+}
+
+function fmtDur(secs){
+  secs=Math.round(secs);
+  if(secs<60) return secs+" s";
+  const m=Math.floor(secs/60), s=secs%60;
+  if(m<60) return s?`${m} min ${String(s).padStart(2,"0")}`:`${m} min`;
+  const h=Math.floor(m/60);
+  return `${h} h ${String(m%60).padStart(2,"0")}`;
+}
+
 /* Le web ne permet pas de continuer un traitement quand l'app est quittée ou
    l'onglet mis en veille par l'OS. On atténue : wake lock (l'écran ne s'éteint
    pas ⇒ la conversion continue tant que l'app reste au premier plan) et
@@ -933,23 +1019,31 @@ window.addEventListener("beforeunload",(e)=>{
   if(converting){ e.preventDefault(); e.returnValue="Conversion en cours — elle sera perdue si tu quittes."; }
 });
 
-async function runConvert(dirHandle){
+async function runConvert(sink){
   converting=true; acquireWakeLock();
   els.convert.disabled=true; els.reset.disabled=true;
   if(els.convertDir) els.convertDir.disabled=true;
+  if(els.convertDrive) els.convertDrive.disabled=true;
   els.prog.classList.remove("hidden");
   els.results.innerHTML="";
   state.outputs=[];
-  state.streamed=!!dirHandle;   // écriture au fil de l'eau (rien gardé en mémoire)
+  state.streamed=!!sink;   // écriture au fil de l'eau (rien gardé en mémoire)
+  state.sinkKind=sink?sink.kind:null;
+  state.report=null;
   releaseZip(); // libère l'archive de l'aperçu avant de charger la mémoire
   const o=opts();
   const total=state.flatPreview.length;
   const nJobs=state.jobs.length;
   const CONC=Math.max(1, Math.min(4, navigator.hardwareConcurrency||2));
+  const t0=Date.now();
+  const stats={inBytes:0,outBytes:0,colorPages:0,grayPages:0,spreads:0,outPages:0};
   let done=0;
   const tick=(j,job)=>{ done++;
     els.progFill.style.width=Math.round(done/total*100)+"%";
-    els.progTxt.textContent=`Tome ${j+1}/${nJobs} · ${job.name} — ${done}/${total} pages`;
+    // Estimation du temps restant, une fois le rythme stabilisé.
+    const el=(Date.now()-t0)/1000;
+    const eta=(done>=8&&el>3&&done<total)?` · ~${fmtDur(el/done*(total-done))} restantes`:"";
+    els.progTxt.textContent=`Tome ${j+1}/${nJobs} · ${job.name} — ${done}/${total} pages${eta}`;
   };
 
   let skipped=0;
@@ -959,22 +1053,20 @@ async function runConvert(dirHandle){
     // Suffixe « (Kobo) » seulement sans renommage (pour ne pas écraser la source).
     const filename=base+(els.rename.checked?"":" (Kobo)")+".cbz";
 
-    // Reprise : si le tome est déjà dans le dossier (conversion précédente
+    // Reprise : si le tome est déjà dans la destination (conversion précédente
     // interrompue ou refaite), on le saute au lieu de tout reconvertir.
-    if(dirHandle){
-      try{
-        const fh=await dirHandle.getFileHandle(filename);   // sans create
-        const f=await fh.getFile();
-        if(f.size>0){
-          skipped++;
-          done+=job.pages.length;
-          els.progFill.style.width=Math.round(done/total*100)+"%";
-          els.progTxt.textContent=`Tome ${j+1}/${nJobs} · ${job.name} — déjà présent, ignoré`;
-          state.outputs.push({filename, blob:null, pageCount:job.pages.length, saved:true});
-          addResult(filename, null, job.pages.length, "déjà présent — ignoré");
-          continue;
-        }
-      }catch(e){} // absent ⇒ on convertit
+    if(sink){
+      let already=false;
+      try{ already=await sink.exists(filename); }catch(e){}
+      if(already){
+        skipped++;
+        done+=job.pages.length;
+        els.progFill.style.width=Math.round(done/total*100)+"%";
+        els.progTxt.textContent=`Tome ${j+1}/${nJobs} · ${job.name} — déjà présent, ignoré`;
+        state.outputs.push({filename, blob:null, pageCount:job.pages.length, saved:true});
+        addResult(filename, null, job.pages.length, "déjà présent — ignoré");
+        continue;
+      }
     }
 
     const zip=new JSZip();
@@ -993,10 +1085,14 @@ async function runConvert(dirHandle){
       }
       catch(e){ tick(j,job); return []; }
       let r; try{ r=await processor.run(blob,o); }catch(e){ tick(j,job); return []; }
+      if(r.gray) stats.grayPages++; else stats.colorPages++;
+      if(r.isSpread) stats.spreads++;
+      stats.outPages+=r.blobs.length;
       tick(j,job);
       return r.blobs;
     });
     src=null; // libère l'archive source
+    stats.inBytes += job.file?job.file.size:(job.srcSize||job.pages.reduce((s,p)=>s+(p.blob?p.blob.size:0),0));
 
     let outIdx=1, outCount=0;
     for(const blobs of perPage) for(const b of blobs){
@@ -1008,18 +1104,19 @@ async function runConvert(dirHandle){
       title:base, series:meta.series, number:meta.tome, count:outCount, rtl:o.rtl,
     }));
     const cbz=await zip.generateAsync({type:"blob",compression:"STORE"});
-    if(dirHandle){
+    stats.outBytes+=cbz.size;
+    if(sink){
       // Écriture au fil de l'eau : on écrit le tome puis on libère le blob.
       // Rien ne s'accumule en mémoire ⇒ des centaines de tomes possibles.
       try{
-        const fh=await dirHandle.getFileHandle(filename,{create:true});
-        const w=await fh.createWritable(); await w.write(cbz); await w.close();
+        await sink.write(filename,cbz);
         state.outputs.push({filename, blob:null, pageCount:outCount, saved:true});
         addResult(filename, null, outCount);
       }catch(e){
-        els.progTxt.textContent="Écriture interrompue : "+e.message;
+        els.progTxt.textContent="Écriture interrompue ("+sink.label+") : "+e.message+" — relance pour reprendre où ça s'est arrêté.";
         els.convert.disabled=false; els.reset.disabled=false;
         if(els.convertDir) els.convertDir.disabled=false;
+        if(els.convertDrive) els.convertDrive.disabled=false;
         converting=false; releaseWakeLock();
         return;
       }
@@ -1030,14 +1127,35 @@ async function runConvert(dirHandle){
     await new Promise(r=>setTimeout(r,0)); // laisse respirer le GC entre les tomes
   }
   const conv=nJobs-skipped;
-  els.progTxt.textContent = dirHandle
-    ? `Terminé ✓ — ${conv} tome${conv>1?"s":""} écrit${conv>1?"s":""}${skipped?` · ${skipped} déjà présent${skipped>1?"s":""} (ignoré${skipped>1?"s":""})`:""}`
+  state.report={...stats, tomes:conv, skipped, secs:(Date.now()-t0)/1000, sinkLabel:sink?sink.label:null};
+  els.progTxt.textContent = sink
+    ? `Terminé ✓ — ${conv} tome${conv>1?"s":""} écrit${conv>1?"s":""} dans ${sink.label}${skipped?` · ${skipped} déjà présent${skipped>1?"s":""} (ignoré${skipped>1?"s":""})`:""}`
     : `Terminé ✓ — ${nJobs} tome${nJobs>1?"s":""}`;
   els.progFill.style.width="100%";
   renderResultsHeader();
   els.convert.disabled=false; els.reset.disabled=false;
   if(els.convertDir) els.convertDir.disabled=false;
+  if(els.convertDrive) els.convertDrive.disabled=false;
   converting=false; releaseWakeLock();
+}
+
+// Rapport de fin : durée, pages, poids avant/après, couleur, planches larges.
+function renderReport(){
+  const r=state.report;
+  if(!r || !r.tomes) return;
+  const mb=b=>b>=1073741824?(b/1073741824).toFixed(2)+" Go":(b/1048576).toFixed(b<10485760?1:0)+" Mo";
+  const parts=[`⏱ ${fmtDur(r.secs)}`,
+    `${r.grayPages+r.colorPages} pages traitées`];
+  if(r.inBytes&&r.outBytes){
+    const pct=Math.round((1-r.outBytes/r.inBytes)*100);
+    parts.push(`${mb(r.inBytes)} → ${mb(r.outBytes)}${pct>0?` (−${pct}%)`:""}`);
+  }
+  if(r.colorPages) parts.push(`${r.colorPages} page${r.colorPages>1?"s":""} couleur`);
+  if(r.spreads)    parts.push(`${r.spreads} planche${r.spreads>1?"s":""} large${r.spreads>1?"s":""}`);
+  const div=document.createElement("div");
+  div.className="res-actions";
+  div.innerHTML=`<span class="ra-info">${parts.join(" · ")}</span>`;
+  els.results.prepend(div);
 }
 
 // Top actions over the results list: download-all zip + Drive export
@@ -1046,10 +1164,12 @@ function renderResultsHeader(){
   const bar=document.createElement("div");
   bar.className="res-actions";
   // Écriture au fil de l'eau : tout est déjà sur le disque, pas de blob à
-  // télécharger/envoyer. On affiche juste une confirmation.
+  // télécharger/envoyer. On affiche juste une confirmation + le rapport.
   if(state.streamed){
-    bar.innerHTML=`<span class="ra-info">✓ ${state.outputs.length} tome${state.outputs.length>1?"s":""} enregistré${state.outputs.length>1?"s":""} dans le dossier choisi.</span>`;
+    const where=state.report&&state.report.sinkLabel?state.report.sinkLabel:"le dossier choisi";
+    bar.innerHTML=`<span class="ra-info">✓ ${state.outputs.length} tome${state.outputs.length>1?"s":""} enregistré${state.outputs.length>1?"s":""} dans ${where}.</span>`;
     els.results.prepend(bar);
+    renderReport();
     return;
   }
   const totalMB=(state.outputs.reduce((s,o)=>s+o.blob.size,0)/1048576).toFixed(0);
@@ -1086,6 +1206,7 @@ function renderResultsHeader(){
   };
   bar.appendChild(resetBtn);
   els.results.prepend(bar);
+  renderReport();
 }
 
 // Écrit tous les CBZ directement dans un dossier choisi (File System Access API).
@@ -1164,10 +1285,10 @@ function addResult(filename, blob, pageCount, note){
     const a=document.createElement("a");
     a.className="dl"; a.href=URL.createObjectURL(blob); a.download=filename; a.textContent="Télécharger";
     row.appendChild(a);
-  }else{      // déjà écrit sur le disque (écriture au fil de l'eau / reprise)
+  }else{      // déjà écrit dans la destination (écriture au fil de l'eau / reprise)
     const tag=document.createElement("span");
     tag.className="meta"; tag.style.color="var(--ok)";
-    tag.textContent=note?"↷ ignoré":"↳ dans le dossier";
+    tag.textContent=note?"↷ ignoré":(state.sinkKind==="drive"?"↳ sur Drive":"↳ dans le dossier");
     row.appendChild(tag);
   }
   els.results.appendChild(row);
@@ -1287,57 +1408,56 @@ async function uploadToDrive(name,blob,folderId){
   return r.json();
 }
 
-async function exportToDrive(btn){
+// Connexion Drive complète : config (ID client / clé API, demandés une fois),
+// jeton, puis choix du dossier (sélecteur visuel, ou « Shiori » auto sans clé).
+// Renvoie {folderId, folderName} ou null si annulé/incomplet.
+async function driveConnect(status){
   if(!driveClientId()){
     const cid=(prompt("Export Drive — colle ton ID CLIENT OAuth\n(celui qui finit par « .apps.googleusercontent.com », ligne « Shiori Web »).\n\n"+
                       "⚠️ Ce n'est PAS la clé API (AIza…) — elle sera demandée juste après.\n"+
                       "Mémorisé dans ce navigateur.")||"").trim();
-    if(!cid) return;
+    if(!cid) return null;
     if(!CLIENT_ID_RE.test(cid)){
       alert("Ça ne ressemble pas à un ID client OAuth.\nIl doit finir par « .apps.googleusercontent.com ».\n\n(Si tu as collé la clé « AIza… », c'est la clé API : elle sera demandée à l'étape suivante.)");
-      return;
+      return null;
     }
     localStorage.setItem("shiori_gclient", cid);
   }
-  if(!driveReady()){ alert("Le service Google ne s'est pas chargé (souvent bloqué dans l'aperçu en bac à sable). Réessaie sur la version hébergée."); return; }
+  if(!driveReady()){ alert("Le service Google ne s'est pas chargé (souvent bloqué dans l'aperçu en bac à sable). Réessaie sur la version hébergée."); return null; }
+  status("Connexion…");
+  await getDriveToken();
+
+  if(!driveApiKey()){
+    const k=(prompt("Sélecteur de dossier — colle ta CLÉ API Google\n(celle qui commence par « AIza… »).\n\n"+
+                    "Laisse vide pour envoyer dans un dossier « Shiori » créé automatiquement.")||"").trim();
+    if(k){
+      if(!API_KEY_RE.test(k)){ alert("Ça ne ressemble pas à une clé API.\nElle commence par « AIza… »."); return null; }
+      localStorage.setItem("shiori_gapikey", k);
+    }
+  }
+  if(driveApiKey()){
+    status("Choix du dossier…");
+    await loadPicker();
+    const picked=await pickFolder();
+    if(!picked) return null; // annulé
+    return {folderId:picked.id, folderName:picked.name};
+  }
+  return {folderId:await findOrCreateFolder("Shiori"), folderName:"Shiori"};
+}
+
+async function exportToDrive(btn){
   btn.disabled=true; const old=btn.textContent;
   try{
-    btn.textContent="Connexion…";
-    await getDriveToken();
-
-    // Choix du dossier via le sélecteur visuel (nécessite une clé API).
-    // Sans clé API : repli sur un dossier « Shiori » créé automatiquement.
-    if(!driveApiKey()){
-      const k=(prompt("Sélecteur de dossier — colle ta CLÉ API Google\n(celle qui commence par « AIza… », p. ex. la « Browser key »).\n\n"+
-                      "Laisse vide pour envoyer dans un dossier « Shiori » créé automatiquement.")||"").trim();
-      if(k){
-        if(!API_KEY_RE.test(k)){
-          alert("Ça ne ressemble pas à une clé API.\nElle commence par « AIza… ».");
-          btn.textContent=old; btn.disabled=false; return;
-        }
-        localStorage.setItem("shiori_gapikey", k);
-      }
-    }
-    let folderId, folderName;
-    if(driveApiKey()){
-      btn.textContent="Choix du dossier…";
-      await loadPicker();
-      const picked=await pickFolder();
-      if(!picked){ btn.textContent=old; btn.disabled=false; return; } // annulé
-      folderId=picked.id; folderName=picked.name;
-    }else{
-      folderId=await findOrCreateFolder("Shiori"); folderName="Shiori";
-    }
-
+    const dest=await driveConnect(t=>btn.textContent=t);
+    if(!dest){ btn.textContent=old; btn.disabled=false; return; }
     let i=0;
     for(const o of state.outputs){
       i++; btn.textContent=`Envoi ${i}/${state.outputs.length}…`;
-      await uploadToDrive(o.filename,o.blob,folderId);
+      await uploadToDrive(o.filename,o.blob,dest.folderId);
     }
-    btn.textContent=`✓ Envoyé dans « ${folderName} »`;
+    btn.textContent=`✓ Envoyé dans « ${dest.folderName} »`;
   }catch(e){
     btn.textContent=old; btn.disabled=false;
-    if(e.message==="apikey"){ alert("Clé API manquante pour le sélecteur de dossier."); return; }
     alert("Échec de l'envoi vers Drive : "+e.message);
     return;
   }
@@ -1402,6 +1522,17 @@ els.renametpl.addEventListener("input",updateRenamePreview);
 $("settings").addEventListener("input", saveSettings);
 $("settings").addEventListener("change", saveSettings);
 
+/* ---------- Aide (bouton « ? » + première visite) ---------- */
+const helpOverlay=$("help-overlay");
+const openHelp=()=>helpOverlay.classList.remove("hidden");
+const closeHelp=()=>{ helpOverlay.classList.add("hidden"); try{ localStorage.setItem("shiori_help_seen","1"); }catch(e){} };
+$("help-btn").addEventListener("click",openHelp);
+$("help-close").addEventListener("click",closeHelp);
+helpOverlay.addEventListener("click",(e)=>{ if(e.target===helpOverlay) closeHelp(); });
+document.addEventListener("keydown",(e)=>{ if(e.key==="Escape"&&!helpOverlay.classList.contains("hidden")) closeHelp(); });
+// Première visite : on montre le guide une fois.
+try{ if(!localStorage.getItem("shiori_help_seen")) openHelp(); }catch(e){}
+
 /* ---------- Préréglages (1 clic → jeu de réglages cohérent) ---------- */
 const PRESETS={
   bw:    {colormode:"gray", sharpen:true,  levels:false, gamma:"1",    quality:"85"},
@@ -1461,9 +1592,24 @@ if(window.showDirectoryPicker && els.convertDir){
     let dir;
     try{ dir=await window.showDirectoryPicker({mode:"readwrite"}); }
     catch(e){ return; } // annulé
-    runConvert(dir);
+    runConvert(makeDirSink(dir));
   });
 }
+// Convertir en envoyant chaque tome sur Drive dès qu'il est prêt (avec reprise).
+els.convertDrive.addEventListener("click",async()=>{
+  const btn=els.convertDrive, old=btn.textContent;
+  btn.disabled=true;
+  let sink=null;
+  try{
+    const dest=await driveConnect(t=>btn.textContent=t);
+    if(dest){
+      btn.textContent="Lecture du dossier…";
+      sink=await makeDriveSink(dest.folderId,dest.folderName);
+    }
+  }catch(e){ alert("Drive : "+e.message); }
+  btn.textContent=old; btn.disabled=false;
+  if(sink) runConvert(sink);
+});
 els.reset.addEventListener("click",resetAll);
 
 // reflect (possibly restored) settings in the UI, then restore from localStorage
