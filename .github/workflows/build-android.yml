@@ -1,0 +1,124 @@
+name: Build Android (.apk)
+
+# Construit l'application Android (Trusted Web Activity — l'app affiche le
+# site en direct, donc TOUJOURS à jour sans re-télécharger l'APK).
+# Nécessite le secret ANDROID_KEYSTORE_PASSWORD (mot de passe que tu choisis,
+# une fois) ; la clé de signature est générée au premier run puis committée
+# (protégée par ce mot de passe) pour rester stable — indispensable pour les
+# mises à jour de l'APK et la vérification assetlinks.
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'twa-manifest.json'
+      - '.github/workflows/build-android.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-android
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      KS_PASS: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+    steps:
+      - name: Vérifier la configuration
+        id: check
+        run: |
+          if [ -z "$KS_PASS" ]; then
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::Secret ANDROID_KEYSTORE_PASSWORD absent — build APK ignorée. Ajoute-le (Settings → Secrets → Actions) puis relance."
+          else
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v4
+        if: steps.check.outputs.configured == 'true'
+
+      - uses: actions/setup-node@v4
+        if: steps.check.outputs.configured == 'true'
+        with:
+          node-version: '20'
+
+      - uses: actions/setup-java@v4
+        if: steps.check.outputs.configured == 'true'
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Installer Bubblewrap
+        if: steps.check.outputs.configured == 'true'
+        run: |
+          npm install -g @bubblewrap/cli
+          mkdir -p ~/.bubblewrap
+          printf '{"jdkPath":"%s","androidSdkPath":"%s"}\n' "$JAVA_HOME" "$ANDROID_HOME" > ~/.bubblewrap/config.json
+          cat ~/.bubblewrap/config.json
+
+      - name: Clé de signature (générée au 1er run, puis stable)
+        if: steps.check.outputs.configured == 'true'
+        run: |
+          mkdir -p android
+          if [ ! -f android/signing.keystore ]; then
+            keytool -genkeypair -dname "CN=Shiori" -alias shiori -keyalg RSA -keysize 2048 \
+              -validity 10000 -keystore android/signing.keystore \
+              -storepass "$KS_PASS" -keypass "$KS_PASS"
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git add android/signing.keystore
+            git commit -m "Clé de signature Android (protégée par le secret) [skip ci]"
+            git push
+            echo "::notice::Clé de signature générée et committée — elle restera identique pour toutes les prochaines builds."
+          fi
+
+      - name: Versionner et compiler l'APK
+        if: steps.check.outputs.configured == 'true'
+        env:
+          BUBBLEWRAP_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          BUBBLEWRAP_KEY_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+        run: |
+          # versionCode croissant à chaque build (requis pour mettre à jour l'app)
+          jq ".appVersionCode = ${{ github.run_number }} | .appVersion = \"1.1.${{ github.run_number }}\"" \
+            twa-manifest.json > twa-manifest.tmp && mv twa-manifest.tmp twa-manifest.json
+          bubblewrap build --skipPwaValidation
+
+      - name: Mettre à jour assetlinks.json (empreinte de signature)
+        if: steps.check.outputs.configured == 'true'
+        run: |
+          FP=$(keytool -list -v -keystore android/signing.keystore -alias shiori \
+               -storepass "$KS_PASS" | grep -oP 'SHA256: \K[0-9A-F:]+')
+          echo "Empreinte SHA-256 : $FP"
+          python3 - "$FP" <<'EOF'
+          import json, sys
+          fp = sys.argv[1]
+          data = [{
+            "relation": ["delegate_permission/common.handle_all_urls"],
+            "target": {
+              "namespace": "android_app",
+              "package_name": "app.web.shiori_5be31.twa",
+              "sha256_cert_fingerprints": [fp],
+            },
+          }]
+          open(".well-known/assetlinks.json", "w").write(json.dumps(data, indent=2) + "\n")
+          EOF
+          if ! git diff --quiet -- .well-known/assetlinks.json; then
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git add .well-known/assetlinks.json
+            git commit -m "assetlinks.json : empreinte de signature Android"
+            git pull --rebase origin main
+            git push
+            echo "::notice::assetlinks.json mis à jour — le déploiement du site le publiera (plein écran sans barre d'adresse)."
+          fi
+
+      - name: Publier l'APK en artefact
+        if: steps.check.outputs.configured == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: Shiori-Android
+          path: app-release-signed.apk
+          if-no-files-found: error

@@ -1,0 +1,32 @@
+{
+  "packageId": "app.web.shiori_5be31.twa",
+  "host": "shiori-5be31.web.app",
+  "name": "Shiori — convertisseur Kobo",
+  "launcherName": "Shiori",
+  "display": "standalone",
+  "themeColor": "#1a1714",
+  "navigationColor": "#1a1714",
+  "navigationColorDark": "#1a1714",
+  "navigationDividerColor": "#1a1714",
+  "navigationDividerColorDark": "#1a1714",
+  "backgroundColor": "#1a1714",
+  "startUrl": "/",
+  "iconUrl": "https://shiori-5be31.web.app/icons/icon-512.png",
+  "maskableIconUrl": "https://shiori-5be31.web.app/icons/maskable-512.png",
+  "appVersion": "1.1.0",
+  "appVersionCode": 1,
+  "shortcuts": [],
+  "signingKey": {
+    "path": "./android/signing.keystore",
+    "alias": "shiori"
+  },
+  "webManifestUrl": "https://shiori-5be31.web.app/manifest.webmanifest",
+  "fallbackType": "customtabs",
+  "enableNotifications": true,
+  "orientation": "default",
+  "fullScopeUrl": "https://shiori-5be31.web.app/",
+  "minSdkVersion": 21,
+  "isChromeOSOnly": false,
+  "isMetaQuest": false,
+  "enableSiteSettingsShortcut": true
+}

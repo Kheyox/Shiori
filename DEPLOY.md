@@ -156,3 +156,23 @@ déploiement depuis cette même constante). **Quand tu veux signaler une nouvell
 version aux exe installés : incrémente `APP_VERSION`** (ex. 1.1.0 → 1.2.0) —
 le site publiera la nouvelle valeur et les anciens exe afficheront le bandeau
 « Télécharger ».
+
+## Application Android (.apk) automatique
+
+Le workflow **Build Android (.apk)** construit l'APK (Trusted Web Activity)
+directement sur GitHub — plus besoin de PWABuilder :
+
+1. **Une fois** : ajoute le secret `ANDROID_KEYSTORE_PASSWORD` (Settings →
+   Secrets → Actions) — un mot de passe fort que tu choisis. Il protège la
+   clé de signature, générée au premier run puis committée (chiffrée par ce
+   mot de passe) pour rester stable.
+2. Lance le workflow (Actions → *Build Android (.apk)* → Run workflow) →
+   artefact **Shiori-Android** (`app-release-signed.apk`) à installer sur le
+   téléphone (autoriser « sources inconnues »).
+3. Le workflow met à jour `.well-known/assetlinks.json` tout seul avec
+   l'empreinte de signature → au déploiement suivant du site, l'app passe en
+   plein écran (sans barre d'adresse).
+
+**Mises à jour : rien à faire.** L'APK affiche le site en direct — chaque
+push sur `main` met à jour l'app instantanément (contrairement à l'exe
+Windows). On ne re-télécharge l'APK que pour changer l'icône/le nom.
