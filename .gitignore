@@ -7,6 +7,7 @@ ui-debug.log
 
 # Dépendances / build (l'app reste sans build, mais au cas où)
 node_modules/
+dist/
 
 # OS / éditeurs
 .DS_Store

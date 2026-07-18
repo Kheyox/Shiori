@@ -129,3 +129,21 @@ Tu peux aussi **coller l'ID directement dans l'app** : au premier clic sur
 (pas besoin de toucher au code ni de redéployer).
 
 Tant qu'aucun ID n'est fourni, le reste de l'app fonctionne normalement.
+
+## Application Windows (.exe)
+
+Le workflow **Build Windows (.exe)** (`.github/workflows/build-windows.yml`)
+compile une vraie application de bureau (Tauri : fenêtre native + moteur Edge
+WebView2, ~10 Mo) sur une machine Windows de GitHub :
+
+- **À la main** : onglet Actions → *Build Windows (.exe)* → Run workflow →
+  récupère l'artefact `Shiori-Windows` (installateur `.exe`).
+- **Par tag** : `git tag v1.0.1 && git push origin v1.0.1` → build + **Release
+  GitHub** avec le `.exe` téléchargeable.
+
+L'app embarque le convertisseur en local (JSZip et pdf.js vendorisés ⇒
+fonctionne hors-ligne). Limites connues : l'export Google Drive ne marche pas
+dans l'exe (origine OAuth non web) — utiliser le site pour ça ; la lecture des
+.cbr télécharge sa lib au premier usage (internet requis une fois).
+L'exe n'est pas signé : SmartScreen affichera « informations complémentaires »
+au premier lancement (normal pour une app perso).

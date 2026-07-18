@@ -1,0 +1,72 @@
+name: Build Windows (.exe)
+
+# Construit l'application de bureau Windows (Tauri) sur une machine Windows
+# de GitHub. Déclenchable à la main (Actions → Run workflow) ; un tag v*
+# publie en plus le .exe dans une Release GitHub.
+on:
+  workflow_dispatch:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-windows
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Préparer le frontend local (hors-ligne)
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist/vendor | Out-Null
+          Copy-Item kobo-converter.html dist/index.html
+          Copy-Item -Recurse icons dist/icons
+          Copy-Item manifest.webmanifest dist/
+          # Vendorise les libs CDN pour que l'exe fonctionne sans internet
+          Invoke-WebRequest https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js -OutFile dist/vendor/jszip.min.js
+          Invoke-WebRequest https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js -OutFile dist/vendor/pdf.min.js
+          Invoke-WebRequest https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js -OutFile dist/vendor/pdf.worker.min.js
+          $h = Get-Content dist/index.html -Raw
+          $h = $h -replace 'https://cdnjs\.cloudflare\.com/ajax/libs/jszip/3\.10\.1/jszip\.min\.js', 'vendor/jszip.min.js'
+          $h = $h -replace 'https://cdnjs\.cloudflare\.com/ajax/libs/pdf\.js/3\.11\.174/pdf\.min\.js', 'vendor/pdf.min.js'
+          $h = $h -replace 'https://cdnjs\.cloudflare\.com/ajax/libs/pdf\.js/3\.11\.174/pdf\.worker\.min\.js', 'vendor/pdf.worker.min.js'
+          Set-Content dist/index.html $h -NoNewline
+
+      - name: Installer la CLI Tauri
+        run: npm install -D @tauri-apps/cli@^2
+
+      - name: Générer les icônes (.ico) depuis le PNG
+        run: npx tauri icon icons/icon-1024.png
+
+      - name: Compiler l'application
+        run: npx tauri build
+
+      - name: Publier l'installateur en artefact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Shiori-Windows
+          path: src-tauri/target/release/bundle/nsis/*.exe
+          if-no-files-found: error
+
+      - name: Release GitHub (si tag)
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: src-tauri/target/release/bundle/nsis/*.exe
+          generate_release_notes: true
