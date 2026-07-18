@@ -86,6 +86,10 @@
   .hist-head span{color:var(--muted);font-size:12px;white-space:nowrap}
   .hist-files{color:var(--muted-2);font-size:11.5px;margin-top:5px;line-height:1.45;
     display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+  .notice{border:1px solid var(--ink-deep);background:var(--surface-2);border-radius:12px;
+    padding:13px 16px;margin:14px 0 0;font-size:13.5px;line-height:1.5}
+  .notice .n-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+  .notice ul{margin:6px 0 0;padding-left:18px;color:var(--muted);font-size:12.5px}
   .drop h2{margin:0 0 6px;font-size:18px;font-weight:600}
   .drop p{margin:0;color:var(--muted);font-size:13.5px}
   .drop .ic{font-size:30px;display:block;margin-bottom:10px;opacity:.85}
@@ -384,6 +388,9 @@
       </div>
     </div>
 
+    <div class="notice hidden" id="dup-banner"></div>
+    <div class="notice hidden" id="merge-banner"></div>
+
     <div class="runbar">
       <button class="btn" id="convert">Convertir</button>
       <button class="btn ghost hidden" id="convert-dir" title="Choisis un dossier ; chaque tome y est écrit dès qu'il est prêt (mémoire minimale, idéal gros lots / Kobo branchée)">Convertir → dossier</button>
@@ -478,7 +485,7 @@ function parseName(raw){
   s=s.replace(/[_.]+/g," ");                                // séparateurs → espaces AVANT détection du tome
   let tome=null;
   const pats=[
-    /\b(?:vol(?:ume)?|v|t(?:ome)?)[\s._-]*(\d{1,4})\b/i,
+    /\b(?:vol(?:ume)?|v|t(?:ome)?|ch(?:ap(?:itre|ter)?)?|épisode|ep)[\s._-]*(\d{1,4})\b/i,
     /#\s*(\d{1,4})\b/,
     /\b(\d{1,3})\s*$/,   // numéro final (limité pour éviter les années)
   ];
@@ -497,6 +504,7 @@ function fillTemplate(tpl,series,tome){
   return out || series || "manga";
 }
 function outputBaseName(job){
+  if(job.merged) return job.name;   // nom fixé à la fusion, pas de re-parsing
   if(!els.rename.checked) return job.name;
   const {series,tome}=parseName(job.rawName||job.name);
   return fillTemplate(els.renametpl.value||"{série} - Tome {tome}", series, tome);
@@ -642,15 +650,23 @@ async function getZipFor(ji){
   openZip={ji, zip};   // remplace la précédente ⇒ l'ancienne est libérée
   return zip;
 }
+let openPart={key:null, zip:null};   // cache zip pour les volumes fusionnés (chapitres)
 async function getPageBlob(ji,pi){
   const job=state.jobs[ji], page=job.pages[pi];
+  if(job.merged){                                 // volume fusionné : page d'un chapitre source
+    const part=job.parts[page.part];
+    if(!part.file) return part.pages[page.pi].blob;
+    const key=ji+":"+page.part;
+    if(openPart.key!==key){ openPart={key, zip:await JSZip.loadAsync(part.file)}; }
+    return openPart.zip.file(part.pageNames[page.pi]).async("blob");
+  }
   if(page.blob) return page.blob;                 // image en vrac (File)
   if(job.pdfDoc) return renderPdfPage(job.pdfDoc, pi+1);  // page de PDF
   if(job.rar) return getRarPageBlob(ji,pi);       // page de .cbr
   const zip=await getZipFor(ji);
   return zip.file(job.pageNames[pi]).async("blob");
 }
-function releaseZip(){ openZip={ji:-1, zip:null}; }
+function releaseZip(){ openZip={ji:-1, zip:null}; openPart={key:null, zip:null}; }
 
 /* ---------- PDF en entrée (pdf.js, chargé à la demande) ---------- */
 let pdfjsReady=null;
@@ -1130,7 +1146,8 @@ async function runConvert(sink){
     const job=state.jobs[j];
     const base=outputBaseName(job);
     // Suffixe « (Kobo) » seulement sans renommage (pour ne pas écraser la source).
-    const filename=base+(els.rename.checked?"":" (Kobo)")+".cbz";
+    // Un volume fusionné a déjà un nom unique, pas de suffixe.
+    const filename=base+((els.rename.checked||job.merged)?"":" (Kobo)")+".cbz";
 
     // Reprise : si le tome est déjà dans la destination (conversion précédente
     // interrompue ou refaite), on le saute au lieu de tout reconvertir.
@@ -1153,12 +1170,20 @@ async function runConvert(sink){
     let src=null;
     try{ if(job.file && !job.rar) src=await JSZip.loadAsync(job.file); }
     catch(e){ console.error("open fail",job.name,e); }
+    // volume fusionné : zips des chapitres ouverts à la demande (bornés par CONC)
+    let partZips=job.merged?{}:null;
+    const getPartZip=async(k)=>{ if(!partZips[k]) partZips[k]=JSZip.loadAsync(job.parts[k].file); return partZips[k]; };
 
     // extraction + traitement page par page (bornés par CONC), dans l'ordre
     const perPage=await mapLimit(job.pages, CONC, async (page,pi)=>{
       let blob;
       try{
-        if(job.pdfDoc||job.rar) blob=await getPageBlob(j,pi);
+        if(job.merged){
+          const part=job.parts[page.part];
+          if(part.file){ const z=await getPartZip(page.part); blob=await z.file(part.pageNames[page.pi]).async("blob"); }
+          else blob=part.pages[page.pi].blob;
+        }
+        else if(job.pdfDoc||job.rar) blob=await getPageBlob(j,pi);
         else if(job.file)       blob=await src.file(job.pageNames[pi]).async("blob");
         else                    blob=page.blob;
       }
@@ -1170,7 +1195,7 @@ async function runConvert(sink){
       tick(j,job);
       return r.blobs;
     });
-    src=null; // libère l'archive source
+    src=null; partZips=null; // libère les archives sources
     stats.inBytes += job.file?job.file.size:(job.srcSize||job.pages.reduce((s,p)=>s+(p.blob?p.blob.size:0),0));
 
     let outIdx=1, outCount=0;
@@ -1178,7 +1203,7 @@ async function runConvert(sink){
       zip.file(String(outIdx).padStart(pad,"0")+".jpg", b); outIdx++; outCount++;
     }
 
-    const meta=parseName(job.rawName||job.name);
+    const meta=job.merged?{series:job.series,tome:null}:parseName(job.rawName||job.name);
     zip.file("ComicInfo.xml", comicInfoXML({
       title:base, series:meta.series, number:meta.tome, count:outCount, rtl:o.rtl,
     }));
@@ -1548,7 +1573,119 @@ async function exportToDrive(btn){
   setTimeout(()=>{btn.disabled=false;btn.textContent=old;},5000);
 }
 
+/* ---------- Historique × import : signaler les tomes déjà convertis ----------
+   Prudent par design : on ne signale que si série ET numéro de tome sont
+   identifiés des deux côtés — jamais de rapprochement flou. */
+function historyKeyMap(){
+  const m=new Map(); // "série|tome" -> {date, dest}
+  for(const e of loadHistory()){
+    for(const t of (e.tomes||[])){
+      const {series,tome}=parseName(t);
+      if(!series||tome==null) continue;
+      const k=series.toLowerCase()+"|"+tome;
+      if(!m.has(k)) m.set(k,{date:e.date,dest:e.dest});
+    }
+  }
+  return m;
+}
+function checkAlreadyConverted(){
+  const banner=$("dup-banner");
+  banner.classList.add("hidden"); banner.innerHTML="";
+  const hk=historyKeyMap();
+  if(!hk.size) return;
+  const dup=[];
+  state.jobs.forEach((job,ji)=>{
+    if(job.merged) return;
+    const {series,tome}=parseName(job.rawName||job.name);
+    if(!series||tome==null) return;
+    const hit=hk.get(series.toLowerCase()+"|"+tome);
+    if(hit) dup.push({ji, name:job.name, hit});
+  });
+  if(!dup.length) return;
+  const fdate=d=>new Date(d).toLocaleDateString("fr-FR");
+  banner.innerHTML=`<b>🕘 ${dup.length} tome${dup.length>1?"s":""} déjà converti${dup.length>1?"s":""}</b> d'après ton historique :`+
+    `<ul>${dup.slice(0,6).map(d=>`<li>${d.name.replace(/</g,"&lt;")} — le ${fdate(d.hit.date)} → ${d.hit.dest.replace(/</g,"&lt;")}</li>`).join("")}`+
+    (dup.length>6?`<li>… et ${dup.length-6} autre${dup.length-6>1?"s":""}</li>`:"")+`</ul>`;
+  const act=document.createElement("div"); act.className="n-actions";
+  const ex=document.createElement("button"); ex.className="ra-btn";
+  ex.textContent=`Exclure ce${dup.length>1?"s":""} ${dup.length} tome${dup.length>1?"s":""}`;
+  ex.onclick=()=>{
+    const drop=new Set(dup.map(d=>d.ji));
+    state.jobs=state.jobs.filter((_,ji)=>!drop.has(ji));
+    banner.classList.add("hidden");
+    if(!state.jobs.length){ alert("Tous les tomes déposés étaient déjà convertis."); resetAll(); return; }
+    refreshWorkspace();
+  };
+  const keep=document.createElement("button"); keep.className="ra-btn";
+  keep.textContent="Garder quand même";
+  keep.onclick=()=>banner.classList.add("hidden");
+  act.append(ex,keep); banner.appendChild(act);
+  banner.classList.remove("hidden");
+}
+
+/* ---------- Fusion de chapitres en tomes ----------
+   Volontairement stricte : on ne PROPOSE (jamais d'automatique) que si
+   ≥ 4 fichiers de la même série, tous numérotés, sans doublon de numéro,
+   petits (moy. < 80 pages ⇒ des chapitres, pas des tomes), et de types
+   simples (zip/images — pas de PDF/CBR mélangés). Les fichiers d'origine
+   ne sont jamais modifiés. */
+function proposeChapterMerge(){
+  const banner=$("merge-banner");
+  banner.classList.add("hidden"); banner.innerHTML="";
+  const groups=new Map();
+  state.jobs.forEach((job,ji)=>{
+    if(job.merged||job.pdfDoc||job.rar) return;
+    const {series,tome}=parseName(job.rawName||job.name);
+    if(!series||tome==null) return;
+    const k=series.toLowerCase();
+    if(!groups.has(k)) groups.set(k,[]);
+    groups.get(k).push({ji,num:tome,series});
+  });
+  let prop=null;
+  for(const arr of groups.values()){
+    if(arr.length<4) continue;
+    const nums=arr.map(a=>a.num);
+    if(new Set(nums).size!==nums.length) continue;                    // numéros en double ⇒ ambigu
+    const avg=arr.reduce((s,a)=>s+state.jobs[a.ji].pages.length,0)/arr.length;
+    if(avg>=80) continue;                                             // gros fichiers ⇒ des tomes, pas des chapitres
+    prop={series:arr[0].series, list:arr.slice().sort((a,b)=>a.num-b.num), avg:Math.round(avg)};
+    break;                                                            // une seule proposition à la fois
+  }
+  if(!prop) return;
+  banner.innerHTML=`<b>📚 ${prop.list.length} fichiers ressemblent à des chapitres de « ${prop.series.replace(/</g,"&lt;")} »</b>`+
+    ` (n° ${prop.list[0].num} à ${prop.list[prop.list.length-1].num}, ~${prop.avg} pages chacun).`+
+    ` Les fusionner en un seul volume, dans l'ordre des numéros ? Tes fichiers d'origine ne sont pas modifiés.`;
+  const act=document.createElement("div"); act.className="n-actions";
+  const go=document.createElement("button"); go.className="ra-btn";
+  go.textContent="Fusionner en 1 volume";
+  go.onclick=()=>{ mergeChapters(prop); banner.classList.add("hidden"); };
+  const no=document.createElement("button"); no.className="ra-btn";
+  no.textContent="Laisser tel quel";
+  no.onclick=()=>banner.classList.add("hidden");
+  act.append(go,no); banner.appendChild(act);
+  banner.classList.remove("hidden");
+}
+function mergeChapters(prop){
+  const parts=prop.list.map(a=>state.jobs[a.ji]);
+  const pages=[];
+  parts.forEach((part,k)=>part.pages.forEach((pg,pi)=>pages.push({part:k, pi, name:pg.name})));
+  const name=`${prop.series} — chapitres ${prop.list[0].num}-${prop.list[prop.list.length-1].num}`;
+  const merged={ name, rawName:name, merged:true, series:prop.series, parts, pages,
+    srcSize:parts.reduce((s,p)=>s+(p.file?p.file.size:0),0) };
+  const drop=new Set(prop.list.map(a=>a.ji));
+  state.jobs=state.jobs.filter((_,ji)=>!drop.has(ji)).concat([merged]);
+  refreshWorkspace();
+}
+
 /* ---------- UI wiring ---------- */
+function refreshWorkspace(){
+  buildPreviewIndex();
+  releaseZip();
+  const pageTotal=state.flatPreview.length;
+  els.jobCount.textContent=`${state.jobs.length} volume${state.jobs.length>1?"s":""} · ${pageTotal} pages`;
+  updateRenamePreview();
+  renderPreview();
+}
 function enterWorkspace(){
   els.drop.classList.add("hidden");
   els.workspace.classList.remove("hidden");
@@ -1556,6 +1693,8 @@ function enterWorkspace(){
   els.jobCount.textContent=`${state.jobs.length} volume${state.jobs.length>1?"s":""} · ${pageTotal} pages`;
   updateRenamePreview();
   renderPreview();
+  checkAlreadyConverted();
+  proposeChapterMerge();
 }
 
 function resetAll(){
@@ -1564,6 +1703,7 @@ function resetAll(){
   if(pvUrl){ URL.revokeObjectURL(pvUrl); pvUrl=null; }
   els.results.innerHTML=""; els.file.value="";
   els.prog.classList.add("hidden"); els.progFill.style.width="0";
+  $("dup-banner").classList.add("hidden"); $("merge-banner").classList.add("hidden");
   els.workspace.classList.add("hidden"); els.drop.classList.remove("hidden");
 }
 
