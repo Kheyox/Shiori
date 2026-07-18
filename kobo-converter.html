@@ -232,7 +232,7 @@
         <button id="help-close" type="button" aria-label="Fermer">✕</button>
       </div>
       <ol class="help-steps">
-        <li><b>📥 Dépose tes fichiers</b> — <code>.cbz</code> <code>.zip</code> <code>.cbr</code> <code>.pdf</code> <code>.epub</code> ou images, plusieurs tomes à la fois. Tout reste dans ton navigateur, rien n'est envoyé sur internet.</li>
+        <li><b>📥 Dépose tes fichiers</b> — <code>.cbz</code> <code>.zip</code> <code>.cbr</code> <code>.pdf</code> <code>.epub</code> ou images, plusieurs tomes à la fois. Tout reste dans ton navigateur, rien n'est envoyé sur internet. Sur PC, « 📂 Ouvrir un dossier source » importe un dossier entier (1 sous-dossier = 1 volume) et permet, après conversion vérifiée, de <b>supprimer les originaux</b>.</li>
         <li><b>🎛 Ajuste</b> — choisis un <b>préréglage</b> (N&amp;B net, Couleur, Scan délavé) ou affine à la main. L'aperçu à droite montre le rendu exact sur ta Kobo ; navigue avec les flèches.</li>
         <li><b>⚙️ Convertis</b> — trois façons :
           <ul>
@@ -253,6 +253,8 @@
     <h2>Dépose tes fichiers ici</h2>
     <p>ou clique pour parcourir</p>
     <div class="formats">.CBZ · .ZIP · .CBR · .PDF · .EPUB · JPG · PNG · WEBP — plusieurs volumes acceptés</div>
+    <button type="button" id="open-folder" class="ra-btn hidden" style="margin-top:14px"
+      title="Ouvre un dossier : chaque sous-dossier d'images devient un volume, et Shiori pourra te proposer de supprimer les originaux une fois la conversion vérifiée">📂 Ouvrir un dossier source</button>
     <input type="file" id="file" multiple accept=".cbz,.zip,.cbr,.rar,.pdf,.epub,application/pdf,application/epub+zip,image/*" class="hidden">
   </div>
 
@@ -358,6 +360,9 @@
         <label class="toggle"><input type="checkbox" id="webtoon" checked><span class="sw"></span>
           <span class="stack">Découper les webtoons<span class="desc">Bandes verticales → pages, coupées entre les cases</span></span></label>
 
+        <label class="toggle"><input type="checkbox" id="autoclean"><span class="sw"></span>
+          <span class="stack">Proposer la suppression des originaux<span class="desc">Après conversion vérifiée vers dossier/Drive — source « 📂 dossier source » requise</span></span></label>
+
         <div class="field" style="margin-top:17px">
           <label class="lbl" for="gamma">Gamma <span class="val" id="gamma-v">1.00</span></label>
           <input type="range" id="gamma" min="0.5" max="1.6" step="0.05" value="1">
@@ -444,7 +449,7 @@ const els = {
   preset:$("preset"),
   colormode:$("colormode"), rtl:$("rtl"), dblmode:$("dblmode"), rotdir:$("rotdir"), rotdirField:$("rotdir-field"),
   rename:$("rename"), renameField:$("rename-field"), renametpl:$("renametpl"), renamePreview:$("rename-preview"),
-  levels:$("levels"), trim:$("trim"), sharpen:$("sharpen"), webtoon:$("webtoon"),
+  levels:$("levels"), trim:$("trim"), sharpen:$("sharpen"), webtoon:$("webtoon"), autoclean:$("autoclean"),
   gamma:$("gamma"), gammaV:$("gamma-v"), quality:$("quality"), qualityV:$("quality-v"),
   prev:$("prev"), next:$("next"), pgLabel:$("pg-label"),
   koboScreen:$("kobo-screen"), koboStatus:$("kobo-status"), rtlInd:$("rtl-ind"),
@@ -475,7 +480,7 @@ function opts(){
 
 /* ---------- Réglages mémorisés (localStorage) ---------- */
 const LS_KEY="shiori_settings_v1";
-const SETTINGS_IDS=["preset","profile","cw","ch","colormode","rtl","dblmode","rotdir","rename","renametpl","levels","trim","sharpen","webtoon","gamma","quality"];
+const SETTINGS_IDS=["preset","profile","cw","ch","colormode","rtl","dblmode","rotdir","rename","renametpl","levels","trim","sharpen","webtoon","autoclean","gamma","quality"];
 function snapshotSettings(){
   const s={};
   for(const id of SETTINGS_IDS){ const el=$(id); if(!el)continue; s[id]=el.type==="checkbox"?el.checked:el.value; }
@@ -666,6 +671,92 @@ async function buildJobsFromFiles(fileList){
   return {jobs, failed};
 }
 function cleanName(n){ return n.replace(/\.(cbz|zip)$/i,""); }
+
+/* ---------- Dossier source (File System Access) ----------
+   Ouvrir la source en « dossier » (plutôt qu'en dépôt de fichiers) apporte :
+   1 sous-dossier d'images = 1 volume, et surtout la POSSIBILITÉ de supprimer
+   les originaux après conversion (le navigateur ne peut pas supprimer des
+   fichiers simplement déposés). */
+function attachDelEntries(jobs,map){
+  for(const job of jobs){
+    const srcs=job.file?[job.file]:(job.srcFile?[job.srcFile]:job.pages.map(p=>p.blob).filter(Boolean));
+    const ent=srcs.map(f=>map.get(f)).filter(Boolean).map(e=>({dir:e.dir,name:e.name}));
+    if(ent.length===srcs.length) job.delEntries=ent;   // incomplet ⇒ pas de suppression proposée
+  }
+}
+async function openSourceFolder(){
+  let dir;
+  try{ dir=await window.showDirectoryPicker({mode:"readwrite"}); }
+  catch(e){ return; } // annulé
+  const top=[], subdirs=[];
+  for await (const [name,h] of dir.entries()){
+    if(h.kind==="file") top.push({h,name});
+    else if(h.kind==="directory") subdirs.push(h);
+  }
+  let added=0, failedAll=0;
+  // fichiers au premier niveau (cbz/zip/cbr/pdf/epub/images)
+  if(top.length){
+    const entries=[];
+    for(const t of top){ try{ entries.push({file:await t.h.getFile(), dir, name:t.name}); }catch(e){} }
+    const map=new Map(entries.map(e=>[e.file,e]));
+    const {jobs,failed}=await buildJobsFromFiles(entries.map(e=>e.file));
+    attachDelEntries(jobs,map);
+    state.jobs.push(...jobs); added+=jobs.length; failedAll+=failed;
+  }
+  // 1 sous-dossier = 1 volume (structure fréquente : un dossier par tome)
+  for(const sd of subdirs){
+    const entries=[];
+    try{
+      for await (const [name,h] of sd.entries()){
+        if(h.kind==="file"){ try{ entries.push({file:await h.getFile(), dir:sd, name}); }catch(e){} }
+      }
+    }catch(e){ continue; }
+    if(!entries.length) continue;
+    const map=new Map(entries.map(e=>[e.file,e]));
+    const {jobs,failed}=await buildJobsFromFiles(entries.map(e=>e.file));
+    jobs.forEach(j=>{ if(j.name==="images"){ j.name=j.rawName=sd.name; } });
+    attachDelEntries(jobs,map);
+    state.jobs.push(...jobs); added+=jobs.length; failedAll+=failed;
+  }
+  importProgress(null);
+  if(!added && !state.jobs.length){ alert("Aucun fichier reconnu dans ce dossier."); return; }
+  if(failedAll) alert(failedAll+" fichier(s) illisibles ignorés.");
+  buildPreviewIndex();
+  enterWorkspace();
+}
+
+/* Suppression des originaux — uniquement après vérification :
+   destination durable (dossier/Drive), aucune page en échec, écriture réussie.
+   Toujours un récapitulatif + confirmation explicite, jamais silencieux. */
+async function offerCleanup(cleanup,sinkLabel){
+  if(!cleanup.length) return;
+  const bar=document.createElement("div");
+  bar.className="notice";
+  bar.innerHTML=`<b>🧹 ${cleanup.length} fichier${cleanup.length>1?"s":""} source${cleanup.length>1?"s":""} supprimable${cleanup.length>1?"s":""}</b>`+
+    ` — converti${cleanup.length>1?"s":""} et enregistré${cleanup.length>1?"s":""} dans ${sinkLabel}.`;
+  const act=document.createElement("div"); act.className="n-actions";
+  const go=document.createElement("button"); go.className="ra-btn";
+  go.textContent="Supprimer les originaux";
+  const doDelete=async()=>{
+    const names=cleanup.map(c=>c.name);
+    const preview=names.slice(0,8).join("\n")+(names.length>8?`\n… et ${names.length-8} autres`:"");
+    if(!confirm(`Supprimer DÉFINITIVEMENT ces ${cleanup.length} fichier(s) du dossier source ?\n(pas de corbeille — ils sont déjà convertis dans ${sinkLabel})\n\n${preview}`)) return;
+    go.disabled=true;
+    let ok=0, ko=0;
+    for(const c of cleanup){
+      try{ await c.dir.removeEntry(c.name); ok++; }
+      catch(e){ ko++; console.error("suppression fail",c.name,e); }
+    }
+    bar.innerHTML=`<b>🧹 ${ok} fichier${ok>1?"s":""} source${ok>1?"s":""} supprimé${ok>1?"s":""}.</b>`+(ko?` ${ko} en échec (voir console).`:"");
+  };
+  go.onclick=doDelete;
+  const no=document.createElement("button"); no.className="ra-btn";
+  no.textContent="Garder les originaux";
+  no.onclick=()=>bar.remove();
+  act.append(go,no); bar.appendChild(act);
+  els.results.prepend(bar);
+  if(els.autoclean.checked) doDelete();   // opt-in : va droit à la confirmation
+}
 
 function buildPreviewIndex(){
   state.flatPreview=[];
@@ -1172,6 +1263,7 @@ async function runConvert(sink,append){
 
   let skipped=0;
   const convertedNames=[];
+  const cleanup=[];   // sources supprimables (conversion vérifiée uniquement)
   for(let j=0;j<nJobs;j++){
     const job=state.jobs[j];
     const base=outputBaseName(job);
@@ -1191,6 +1283,7 @@ async function runConvert(sink,append){
         els.progTxt.textContent=`Tome ${j+1}/${nJobs} · ${job.name} — déjà présent, ignoré`;
         state.outputs.push({filename, blob:null, pageCount:job.pages.length, saved:true});
         addResult(filename, null, job.pages.length, "déjà présent — ignoré");
+        if(job.delEntries) cleanup.push(...job.delEntries);  // déjà en sécurité à destination
         continue;
       }
     }
@@ -1203,6 +1296,7 @@ async function runConvert(sink,append){
     // volume fusionné : zips des chapitres ouverts à la demande (bornés par CONC)
     let partZips=job.merged?{}:null;
     const getPartZip=async(k)=>{ if(!partZips[k]) partZips[k]=JSZip.loadAsync(job.parts[k].file); return partZips[k]; };
+    let pageFails=0;   // la moindre page en échec ⇒ pas de suppression des sources
 
     // extraction + traitement page par page (bornés par CONC), dans l'ordre
     const perPage=await mapLimit(job.pages, CONC, async (page,pi)=>{
@@ -1217,8 +1311,8 @@ async function runConvert(sink,append){
         else if(job.file)       blob=await src.file(job.pageNames[pi]).async("blob");
         else                    blob=page.blob;
       }
-      catch(e){ tick(j,job); return []; }
-      let r; try{ r=await processor.run(blob,o); }catch(e){ tick(j,job); return []; }
+      catch(e){ pageFails++; tick(j,job); return []; }
+      let r; try{ r=await processor.run(blob,o); }catch(e){ pageFails++; tick(j,job); return []; }
       if(r.gray) stats.grayPages++; else stats.colorPages++;
       if(r.isSpread) stats.spreads++;
       stats.outPages+=r.blobs.length;
@@ -1247,6 +1341,7 @@ async function runConvert(sink,append){
         state.outputs.push({filename, blob:null, pageCount:outCount, saved:true});
         addResult(filename, null, outCount);
         convertedNames.push(filename);
+        if(job.delEntries && pageFails===0 && outCount>0) cleanup.push(...job.delEntries);
       }catch(e){
         els.progTxt.textContent="Écriture interrompue ("+sink.label+") : "+e.message+" — relance pour reprendre où ça s'est arrêté.";
         els.convert.disabled=false; els.reset.disabled=false;
@@ -1265,6 +1360,7 @@ async function runConvert(sink,append){
   const conv=nJobs-skipped;
   state.report={...stats, tomes:conv, skipped, secs:(Date.now()-t0)/1000, sinkLabel:sink?sink.label:null};
   recordHistory(convertedNames, stats.grayPages+stats.colorPages, sink?sink.label:null);
+  if(sink && cleanup.length) offerCleanup(cleanup, sink.label);
   // En mode Drive on a déjà un jeton : on en profite pour synchroniser l'historique.
   if(sink && sink.kind==="drive") syncHistoryWithDrive().catch(()=>{});
   els.progTxt.textContent = sink
@@ -1705,7 +1801,8 @@ function mergeChapters(prop){
   const pages=[];
   parts.forEach((part,k)=>part.pages.forEach((pg,pi)=>pages.push({part:k, pi, name:pg.name})));
   const name=`${prop.series} — chapitres ${prop.list[0].num}-${prop.list[prop.list.length-1].num}`;
-  const merged={ name, rawName:name, merged:true, series:prop.series, parts, pages,
+  const delEntries=parts.every(p=>p.delEntries)?parts.flatMap(p=>p.delEntries):undefined;
+  const merged={ name, rawName:name, merged:true, series:prop.series, parts, pages, delEntries,
     srcSize:parts.reduce((s,p)=>s+(p.file?p.file.size:0),0) };
   const drop=new Set(prop.list.map(a=>a.ji));
   state.jobs=state.jobs.filter((_,ji)=>!drop.has(ji)).concat([merged]);
@@ -1744,6 +1841,11 @@ function resetAll(){
 
 // drop zone
 els.drop.addEventListener("click",()=>els.file.click());
+if(window.showDirectoryPicker){
+  const ofBtn=$("open-folder");
+  ofBtn.classList.remove("hidden");
+  ofBtn.addEventListener("click",(e)=>{ e.stopPropagation(); openSourceFolder(); });
+}
 els.file.addEventListener("change",e=>handleFiles(e.target.files));
 ["dragenter","dragover"].forEach(ev=>els.drop.addEventListener(ev,e=>{e.preventDefault();els.drop.classList.add("hot");}));
 ["dragleave","drop"].forEach(ev=>els.drop.addEventListener(ev,e=>{e.preventDefault();els.drop.classList.remove("hot");}));
