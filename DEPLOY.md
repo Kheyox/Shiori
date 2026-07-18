@@ -147,3 +147,12 @@ dans l'exe (origine OAuth non web) — utiliser le site pour ça ; la lecture de
 .cbr télécharge sa lib au premier usage (internet requis une fois).
 L'exe n'est pas signé : SmartScreen affichera « informations complémentaires »
 au premier lancement (normal pour une app perso).
+
+### Vérificateur de mise à jour de l'exe
+
+L'exe compare sa version (constante `APP_VERSION` dans `kobo-converter.html`,
+figée à la compilation) au `/version.json` du site (généré automatiquement au
+déploiement depuis cette même constante). **Quand tu veux signaler une nouvelle
+version aux exe installés : incrémente `APP_VERSION`** (ex. 1.1.0 → 1.2.0) —
+le site publiera la nouvelle valeur et les anciens exe afficheront le bandeau
+« Télécharger ».

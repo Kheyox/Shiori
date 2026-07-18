@@ -2302,9 +2302,42 @@ loadSettings();
 syncUI();
 </script>
 
-<!-- PWA : service worker + invite d'installation -->
+<!-- PWA : service worker + invite d'installation + maj desktop -->
 <script>
 "use strict";
+/* Version de l'app. Le site publie cette valeur dans /version.json (générée au
+   déploiement) ; l'exe Windows embarque sa copie figée et compare au démarrage
+   pour signaler qu'une nouvelle version est téléchargeable. */
+const APP_VERSION="1.1.0";
+const IS_DESKTOP = !!(window.__TAURI_INTERNALS__ || window.__TAURI__);
+
+if(IS_DESKTOP){
+  fetch("https://shiori-5be31.web.app/version.json",{cache:"no-store"})
+    .then(r=>r.ok?r.json():null)
+    .then(v=>{
+      if(!v || !v.version || v.version===APP_VERSION) return;
+      const b=document.createElement("div");
+      b.style.cssText="position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:9999;"+
+        "background:var(--ink);color:#fff;padding:11px 16px;border-radius:12px;display:flex;gap:14px;"+
+        "align-items:center;box-shadow:0 6px 24px rgba(0,0,0,.35);font-size:14px";
+      b.innerHTML=`<span>Shiori ${v.version} est disponible (tu as la ${APP_VERSION})</span>`;
+      const btn=document.createElement("button");
+      btn.textContent="Télécharger";
+      btn.style.cssText="background:#fff;color:var(--ink);border:0;border-radius:8px;padding:6px 13px;font-weight:700;cursor:pointer;font-family:inherit";
+      const url="https://github.com/Kheyox/Shiori/actions/workflows/build-windows.yml";
+      btn.onclick=async()=>{
+        try{ if(window.__TAURI__&&window.__TAURI__.opener){ await window.__TAURI__.opener.openUrl(url); return; } }catch(e){}
+        try{ await navigator.clipboard.writeText(url); btn.textContent="Lien copié ✓ — colle-le dans ton navigateur"; }
+        catch(e){ prompt("Ouvre ce lien pour télécharger :", url); }
+      };
+      const later=document.createElement("button");
+      later.textContent="Plus tard";
+      later.style.cssText="background:none;border:0;color:#fff;opacity:.7;cursor:pointer;font-family:inherit";
+      later.onclick=()=>b.remove();
+      b.append(btn,later);
+      document.body.appendChild(b);
+    }).catch(()=>{});
+}
 // Enregistre le service worker (hors-ligne + installable). Nécessite un contexte
 // sécurisé : ça marche sur https:// (Firebase) et sur http://localhost.
 if ("serviceWorker" in navigator) {

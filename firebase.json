@@ -35,6 +35,13 @@
       {
         "source": "**/*.@(png|jpg|jpeg|svg|webp|ico)",
         "headers": [{ "key": "Cache-Control", "value": "public, max-age=2592000" }]
+      },
+      {
+        "source": "/version.json",
+        "headers": [
+          { "key": "Cache-Control", "value": "no-cache" },
+          { "key": "Access-Control-Allow-Origin", "value": "*" }
+        ]
       }
     ]
   }

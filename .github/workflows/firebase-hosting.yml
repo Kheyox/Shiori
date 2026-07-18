@@ -43,6 +43,13 @@ jobs:
         with:
           node-version: '20'
 
+      - name: Générer version.json (lu par l'app de bureau)
+        if: steps.check.outputs.configured == 'true'
+        run: |
+          V=$(grep -oP 'APP_VERSION="\K[0-9][0-9.]*' kobo-converter.html | head -1)
+          printf '{"version":"%s"}\n' "${V:-0}" > version.json
+          cat version.json
+
       - name: Installer la CLI Firebase
         if: steps.check.outputs.configured == 'true'
         run: npm install -g firebase-tools
