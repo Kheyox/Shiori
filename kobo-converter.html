@@ -407,6 +407,7 @@
       </div>
     </div>
 
+    <div class="notice hidden" id="preflight-banner"></div>
     <div class="notice hidden" id="dup-banner"></div>
     <div class="notice hidden" id="merge-banner"></div>
 
@@ -1840,6 +1841,60 @@ async function exportToDrive(btn){
   setTimeout(()=>{btn.disabled=false;btn.textContent=old;},5000);
 }
 
+/* ---------- Contrôle pré-vol ----------
+   Inspecte le lot AVANT conversion et signale ce qu'un humain vérifierait :
+   numéros de tomes manquants, doublons de numéro (⇒ mêmes noms de sortie !),
+   tomes anormalement courts (fichier incomplet ?). Purement informatif —
+   on ne signale que ce qui est détectable sans ambiguïté. */
+function preflightCheck(){
+  const banner=$("preflight-banner");
+  banner.classList.add("hidden"); banner.innerHTML="";
+  const esc=s=>String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;");
+  const issues=[];
+  const groups=new Map();
+  state.jobs.forEach((job)=>{
+    if(job.merged) return;
+    const {series,tome}=parseName(job.rawName||job.name);
+    if(!series||tome==null) return;
+    const k=series.toLowerCase();
+    if(!groups.has(k)) groups.set(k,{name:series,list:[]});
+    groups.get(k).list.push({num:tome, pages:job.pages.length});
+  });
+  for(const g of groups.values()){
+    if(g.list.length<2) continue;
+    const byNum=new Map();
+    g.list.forEach(e=>{ if(!byNum.has(e.num)) byNum.set(e.num,[]); byNum.get(e.num).push(e); });
+    // doublons de numéro ⇒ collision des noms de sortie
+    for(const [num,arr] of byNum) if(arr.length>1)
+      issues.push(`⚠️ « ${esc(g.name)} » : le n° ${num} apparaît ${arr.length} fois — leurs sorties porteraient le même nom (une seule serait gardée).`);
+    if(g.list.length>=3){
+      // trous dans la numérotation (entre le min et le max présents)
+      const nums=[...byNum.keys()].sort((a,b)=>a-b);
+      const missing=[];
+      for(let n=nums[0];n<=nums[nums.length-1];n++) if(!byNum.has(n)) missing.push(n);
+      if(missing.length && missing.length<=12)
+        issues.push(`🕳 « ${esc(g.name)} » : il manque le${missing.length>1?"s":""} n° ${missing.join(", ")} (tu as ${nums[0]} → ${nums[nums.length-1]}).`);
+      else if(missing.length)
+        issues.push(`🕳 « ${esc(g.name)} » : ${missing.length} numéros manquants entre ${nums[0]} et ${nums[nums.length-1]}.`);
+      // tome anormalement court par rapport aux autres
+      const sorted=g.list.map(e=>e.pages).sort((a,b)=>a-b);
+      const median=sorted[Math.floor(sorted.length/2)];
+      if(median>=40){
+        g.list.filter(e=>e.pages<Math.max(15,median*0.4))
+          .forEach(e=>issues.push(`📄 « ${esc(g.name)} » n° ${e.num} : seulement ${e.pages} pages (les autres ~${median}) — fichier incomplet ?`));
+      }
+    }
+  }
+  if(!issues.length) return;
+  banner.innerHTML=`<b>🔍 Contrôle pré-vol — ${issues.length} point${issues.length>1?"s":""} à vérifier</b>`+
+    `<ul>${issues.slice(0,10).map(i=>`<li>${i}</li>`).join("")}${issues.length>10?`<li>… et ${issues.length-10} autres</li>`:""}</ul>`;
+  const act=document.createElement("div"); act.className="n-actions";
+  const okb=document.createElement("button"); okb.className="ra-btn"; okb.textContent="OK, compris";
+  okb.onclick=()=>banner.classList.add("hidden");
+  act.appendChild(okb); banner.appendChild(act);
+  banner.classList.remove("hidden");
+}
+
 /* ---------- Historique × import : signaler les tomes déjà convertis ----------
    Prudent par design : on ne signale que si série ET numéro de tome sont
    identifiés des deux côtés — jamais de rapprochement flou. */
@@ -1953,6 +2008,7 @@ function refreshWorkspace(){
   els.jobCount.textContent=`${state.jobs.length} volume${state.jobs.length>1?"s":""} · ${pageTotal} pages`;
   updateRenamePreview();
   renderPreview();
+  preflightCheck();
 }
 function enterWorkspace(){
   els.drop.classList.add("hidden");
@@ -1963,6 +2019,7 @@ function enterWorkspace(){
   renderPreview();
   checkAlreadyConverted();
   proposeChapterMerge();
+  preflightCheck();
 }
 
 function resetAll(){
@@ -1971,7 +2028,7 @@ function resetAll(){
   if(pvUrl){ URL.revokeObjectURL(pvUrl); pvUrl=null; }
   els.results.innerHTML=""; els.file.value="";
   els.prog.classList.add("hidden"); els.progFill.style.width="0";
-  $("dup-banner").classList.add("hidden"); $("merge-banner").classList.add("hidden");
+  $("dup-banner").classList.add("hidden"); $("merge-banner").classList.add("hidden"); $("preflight-banner").classList.add("hidden");
   els.workspace.classList.add("hidden"); els.drop.classList.remove("hidden");
 }
 
@@ -2241,7 +2298,7 @@ function addToQueue(){
   state.jobs=[]; state.flatPreview=[]; state.previewPos=0;
   releaseZip();
   els.file.value="";
-  $("dup-banner").classList.add("hidden"); $("merge-banner").classList.add("hidden");
+  $("dup-banner").classList.add("hidden"); $("merge-banner").classList.add("hidden"); $("preflight-banner").classList.add("hidden");
   els.workspace.classList.add("hidden"); els.drop.classList.remove("hidden");
   renderQueue();
 }
