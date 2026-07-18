@@ -255,6 +255,8 @@
     <div class="formats">.CBZ · .ZIP · .CBR · .PDF · .EPUB · JPG · PNG · WEBP — plusieurs volumes acceptés</div>
     <button type="button" id="open-folder" class="ra-btn hidden" style="margin-top:14px"
       title="Ouvre un dossier : chaque sous-dossier d'images devient un volume, et Shiori pourra te proposer de supprimer les originaux une fois la conversion vérifiée">📂 Ouvrir un dossier source</button>
+    <button type="button" id="drive-import" class="ra-btn" style="margin-top:14px;margin-left:8px"
+      title="Choisis des fichiers sur ton Google Drive : convertis-les sans les copier sur l'appareil, et Shiori pourra mettre les originaux à la corbeille Drive après conversion vérifiée">☁️ Importer depuis Drive</button>
     <input type="file" id="file" multiple accept=".cbz,.zip,.cbr,.rar,.pdf,.epub,application/pdf,application/epub+zip,image/*" class="hidden">
   </div>
 
@@ -739,15 +741,30 @@ async function offerCleanup(cleanup,sinkLabel){
   go.textContent="Supprimer les originaux";
   const doDelete=async()=>{
     const names=cleanup.map(c=>c.name);
+    const nDrive=cleanup.filter(c=>c.driveId).length, nLocal=cleanup.length-nDrive;
     const preview=names.slice(0,8).join("\n")+(names.length>8?`\n… et ${names.length-8} autres`:"");
-    if(!confirm(`Supprimer DÉFINITIVEMENT ces ${cleanup.length} fichier(s) du dossier source ?\n(pas de corbeille — ils sont déjà convertis dans ${sinkLabel})\n\n${preview}`)) return;
+    const warn=[
+      nLocal?`${nLocal} fichier(s) local(aux) : suppression DÉFINITIVE (pas de corbeille)`:"",
+      nDrive?`${nDrive} fichier(s) Drive : mis à la corbeille Drive (récupérables 30 jours)`:"",
+    ].filter(Boolean).join("\n");
+    if(!confirm(`Supprimer ces ${cleanup.length} fichier(s) source(s) ?\nIls sont déjà convertis dans ${sinkLabel}.\n${warn}\n\n${preview}`)) return;
     go.disabled=true;
     let ok=0, ko=0;
     for(const c of cleanup){
-      try{ await c.dir.removeEntry(c.name); ok++; }
+      try{
+        if(c.driveId){
+          const r=await fetch(`https://www.googleapis.com/drive/v3/files/${c.driveId}`,
+            {method:"PATCH",headers:{Authorization:"Bearer "+driveToken,"Content-Type":"application/json"},
+             body:JSON.stringify({trashed:true})});
+          if(!r.ok) throw new Error("corbeille "+r.status);
+        }else{
+          await c.dir.removeEntry(c.name);
+        }
+        ok++;
+      }
       catch(e){ ko++; console.error("suppression fail",c.name,e); }
     }
-    bar.innerHTML=`<b>🧹 ${ok} fichier${ok>1?"s":""} source${ok>1?"s":""} supprimé${ok>1?"s":""}.</b>`+(ko?` ${ko} en échec (voir console).`:"");
+    bar.innerHTML=`<b>🧹 ${ok} fichier${ok>1?"s":""} source${ok>1?"s":""} supprimé${ok>1?"s":""}${nDrive?" (Drive : corbeille)":""}.</b>`+(ko?` ${ko} en échec (voir console).`:"");
   };
   go.onclick=doDelete;
   const no=document.createElement("button"); no.className="ra-btn";
@@ -768,7 +785,9 @@ function buildPreviewIndex(){
 let openZip={ji:-1, zip:null};
 async function getZipFor(ji){
   if(openZip.ji===ji && openZip.zip) return openZip.zip;
-  const zip=await JSZip.loadAsync(state.jobs[ji].file);
+  const job=state.jobs[ji];
+  const src=job.file || await driveDownload(job.driveId);   // source locale ou Drive
+  const zip=await JSZip.loadAsync(src);
   openZip={ji, zip};   // remplace la précédente ⇒ l'ancienne est libérée
   return zip;
 }
@@ -777,9 +796,12 @@ async function getPageBlob(ji,pi){
   const job=state.jobs[ji], page=job.pages[pi];
   if(job.merged){                                 // volume fusionné : page d'un chapitre source
     const part=job.parts[page.part];
-    if(!part.file) return part.pages[page.pi].blob;
+    if(!part.file && !part.driveId) return part.pages[page.pi].blob;
     const key=ji+":"+page.part;
-    if(openPart.key!==key){ openPart={key, zip:await JSZip.loadAsync(part.file)}; }
+    if(openPart.key!==key){
+      const src=part.file || await driveDownload(part.driveId);
+      openPart={key, zip:await JSZip.loadAsync(src)};
+    }
     return openPart.zip.file(part.pageNames[page.pi]).async("blob");
   }
   if(page.blob) return page.blob;                 // image en vrac (File)
@@ -1307,11 +1329,17 @@ async function runConvert(sink,append){
     const zip=new JSZip();
     const pad=String(job.pages.length*2).length;
     let src=null;
-    try{ if(job.file && !job.rar) src=await JSZip.loadAsync(job.file); }
+    try{
+      if(job.file && !job.rar) src=await JSZip.loadAsync(job.file);
+      else if(job.driveId)     src=await JSZip.loadAsync(await driveDownload(job.driveId));
+    }
     catch(e){ console.error("open fail",job.name,e); }
     // volume fusionné : zips des chapitres ouverts à la demande (bornés par CONC)
     let partZips=job.merged?{}:null;
-    const getPartZip=async(k)=>{ if(!partZips[k]) partZips[k]=JSZip.loadAsync(job.parts[k].file); return partZips[k]; };
+    const getPartZip=async(k)=>{
+      if(!partZips[k]) partZips[k]=(async()=>{ const p=job.parts[k];
+        return JSZip.loadAsync(p.file || await driveDownload(p.driveId)); })();
+      return partZips[k]; };
     let pageFails=0;   // la moindre page en échec ⇒ pas de suppression des sources
 
     // extraction + traitement page par page (bornés par CONC), dans l'ordre
@@ -1320,12 +1348,12 @@ async function runConvert(sink,append){
       try{
         if(job.merged){
           const part=job.parts[page.part];
-          if(part.file){ const z=await getPartZip(page.part); blob=await z.file(part.pageNames[page.pi]).async("blob"); }
+          if(part.file||part.driveId){ const z=await getPartZip(page.part); blob=await z.file(part.pageNames[page.pi]).async("blob"); }
           else blob=part.pages[page.pi].blob;
         }
-        else if(job.pdfDoc||job.rar) blob=await getPageBlob(j,pi);
-        else if(job.file)       blob=await src.file(job.pageNames[pi]).async("blob");
-        else                    blob=page.blob;
+        else if(job.pdfDoc||job.rar)     blob=await getPageBlob(j,pi);
+        else if(job.file||job.driveId)   blob=await src.file(job.pageNames[pi]).async("blob");
+        else                             blob=page.blob;
       }
       catch(e){ pageFails++; tick(j,job); return []; }
       let r; try{ r=await processor.run(blob,o); }catch(e){ pageFails++; tick(j,job); return []; }
@@ -1670,6 +1698,99 @@ async function uploadToDrive(name,blob,folderId){
   return r.json();
 }
 
+// Demande la clé API (sélecteur visuel) si absente ; valeur mémorisée.
+function ensureApiKeyPrompt(extra){
+  if(driveApiKey()) return true;
+  const k=(prompt("Colle ta CLÉ API Google (celle qui commence par « AIza… »).\n\n"+(extra||""))||"").trim();
+  if(!k) return false;
+  if(!API_KEY_RE.test(k)){ alert("Ça ne ressemble pas à une clé API.\nElle commence par « AIza… »."); return false; }
+  localStorage.setItem("shiori_gapikey", k);
+  return true;
+}
+
+// Télécharge un fichier Drive (avec renouvellement de jeton si expiré).
+async function driveDownload(id,retried){
+  const r=await fetch(`https://www.googleapis.com/drive/v3/files/${id}?alt=media`,
+    {headers:{Authorization:"Bearer "+driveToken}});
+  if(r.status===401 && !retried){ await getDriveToken(); return driveDownload(id,true); }
+  if(!r.ok) throw new Error("téléchargement Drive "+r.status);
+  return r.blob();
+}
+
+// Sélecteur multi-fichiers Drive. Résout [{id,name,sizeBytes}], [] si annulé.
+function pickDriveFiles(){
+  return new Promise((resolve,reject)=>{
+    const key=driveApiKey();
+    if(!key) return reject(new Error("apikey"));
+    const view=new google.picker.DocsView(google.picker.ViewId.DOCS)
+      .setIncludeFolders(true).setSelectFolderEnabled(false);
+    const picker=new google.picker.PickerBuilder()
+      .setOAuthToken(driveToken).setDeveloperKey(key)
+      .enableFeature(google.picker.Feature.MULTISELECT_ENABLED)
+      .setTitle("Choisis les fichiers à convertir")
+      .addView(view)
+      .setCallback((d)=>{
+        const a=d[google.picker.Response.ACTION];
+        if(a===google.picker.Action.PICKED)
+          resolve(d[google.picker.Response.DOCUMENTS].map(doc=>({id:doc.id,name:doc.name,sizeBytes:doc.sizeBytes})));
+        else if(a===google.picker.Action.CANCEL) resolve([]);
+      })
+      .build();
+    picker.setVisible(true);
+  });
+}
+
+/* Import depuis Drive : les fichiers sont téléchargés un par un pour lister
+   leurs pages, puis (zip/cbz/epub) le contenu est RELÂCHÉ et re-téléchargé à
+   la demande pendant l'aperçu/conversion — une seule archive en mémoire à la
+   fois, comme pour les fichiers locaux. Les originaux Drive deviennent
+   nettoyables (corbeille Drive) après conversion vérifiée. */
+const DRIVE_IMPORT_RE=/\.(cbz|zip|cbr|rar|pdf|epub|jpe?g|png|webp|gif|bmp)$/i;
+async function importFromDrive(){
+  const btn=$("drive-import"), old=btn.textContent;
+  btn.disabled=true;
+  try{
+    btn.textContent="Connexion…";
+    if(!(await ensureDriveAuth())){ btn.textContent=old; btn.disabled=false; return; }
+    if(!ensureApiKeyPrompt("(nécessaire pour parcourir ton Drive)")){ btn.textContent=old; btn.disabled=false; return; }
+    await loadPicker();
+    btn.textContent=old;
+    const picked=(await pickDriveFiles()).filter(f=>DRIVE_IMPORT_RE.test(f.name));
+    if(!picked.length){ btn.disabled=false; return; }
+    let failed=0;
+    for(let i=0;i<picked.length;i++){
+      const f=picked[i];
+      importProgress(i+1,picked.length,f.name);
+      await new Promise(r=>setTimeout(r,0));
+      try{
+        const blob=await driveDownload(f.id);
+        const file=new File([blob],f.name,{type:blob.type||""});
+        const {jobs,failed:ff}=await buildJobsFromFiles([file]);
+        failed+=ff;
+        for(const j of jobs){
+          // zip/cbz/epub : on libère le contenu, re-téléchargé à la demande
+          if(j.file && !j.rar && !j.pdfDoc){
+            j.driveId=f.id;
+            j.srcSize=f.sizeBytes?+f.sizeBytes:blob.size;
+            j.file=null;
+          }
+          j.delEntries=[{driveId:f.id, name:f.name}];   // nettoyage → corbeille Drive
+          state.jobs.push(j);
+        }
+      }catch(e){ failed++; console.error("drive import fail",f.name,e); }
+    }
+    importProgress(null);
+    if(!state.jobs.length){ alert("Aucun fichier exploitable parmi la sélection."); btn.disabled=false; return; }
+    if(failed) alert(failed+" fichier(s) illisibles ignorés.");
+    buildPreviewIndex();
+    enterWorkspace();
+  }catch(e){
+    importProgress(null);
+    alert("Import Drive : "+e.message);
+  }
+  btn.textContent=old; btn.disabled=false;
+}
+
 // Connexion Drive complète : config (ID client / clé API, demandés une fois),
 // jeton, puis choix du dossier (sélecteur visuel, ou « Shiori » auto sans clé).
 // Renvoie {folderId, folderName} ou null si annulé/incomplet.
@@ -1689,14 +1810,7 @@ async function driveConnect(status){
   status("Connexion…");
   await getDriveToken();
 
-  if(!driveApiKey()){
-    const k=(prompt("Sélecteur de dossier — colle ta CLÉ API Google\n(celle qui commence par « AIza… »).\n\n"+
-                    "Laisse vide pour envoyer dans un dossier « Shiori » créé automatiquement.")||"").trim();
-    if(k){
-      if(!API_KEY_RE.test(k)){ alert("Ça ne ressemble pas à une clé API.\nElle commence par « AIza… »."); return null; }
-      localStorage.setItem("shiori_gapikey", k);
-    }
-  }
+  ensureApiKeyPrompt("Laisse vide pour envoyer dans un dossier « Shiori » créé automatiquement.");
   if(driveApiKey()){
     status("Choix du dossier…");
     await loadPicker();
@@ -1868,6 +1982,7 @@ if(window.showDirectoryPicker){
   ofBtn.classList.remove("hidden");
   ofBtn.addEventListener("click",(e)=>{ e.stopPropagation(); openSourceFolder(); });
 }
+$("drive-import").addEventListener("click",(e)=>{ e.stopPropagation(); importFromDrive(); });
 els.file.addEventListener("change",e=>handleFiles(e.target.files));
 ["dragenter","dragover"].forEach(ev=>els.drop.addEventListener(ev,e=>{e.preventDefault();els.drop.classList.add("hot");}));
 ["dragleave","drop"].forEach(ev=>els.drop.addEventListener(ev,e=>{e.preventDefault();els.drop.classList.remove("hot");}));
