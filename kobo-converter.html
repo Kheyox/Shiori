@@ -64,6 +64,24 @@
   .drop:hover,.drop.hot{border-color:var(--ink);background:var(--surface-2)}
   .drop.busy{border-color:var(--ink);pointer-events:none;animation:pulse 1.2s ease-in-out infinite}
   @keyframes pulse{0%,100%{opacity:1}50%{opacity:.55}}
+  /* Décor de fond (Fuji + sakura) — discret, jamais interactif.
+     Le fond opaque reste sur html ; body devient transparent pour laisser
+     voir le décor placé en z-index négatif. */
+  body{background:transparent}
+  #bg-decor{position:fixed;inset:0;pointer-events:none;z-index:-1;overflow:hidden}
+  #bg-fuji{position:absolute;bottom:0;left:0;width:100%;height:min(44vh,400px)}
+  #bg-branch{position:absolute;top:-8px;right:-14px;width:min(400px,52vw)}
+  .petal{position:absolute;top:0;display:block;width:10px;height:8px;background:#c97f88;
+    border-radius:80% 0 55% 55% / 55% 0 80% 45%;opacity:0;
+    animation-name:petal-fall;animation-timing-function:linear;animation-iteration-count:infinite}
+  @keyframes petal-fall{
+    0%{transform:translate3d(0,-6vh,0) rotate(0deg);opacity:0}
+    6%{opacity:.4}
+    50%{transform:translate3d(-6vw,50vh,0) rotate(260deg);opacity:.35}
+    95%{opacity:.25}
+    100%{transform:translate3d(-13vw,106vh,0) rotate(540deg);opacity:0}
+  }
+  @media (prefers-reduced-motion:reduce){.petal{display:none}}
   /* Aide */
   #help-overlay{position:fixed;inset:0;z-index:9998;background:rgba(0,0,0,.55);
     display:flex;align-items:center;justify-content:center;padding:18px}
@@ -198,6 +216,42 @@
 </style>
 </head>
 <body>
+
+<!-- Décor de fond : mont Fuji + branche de sakura + pétales (SVG inline,
+     très discret pour ne pas gêner la lecture ; masqué aux lecteurs d'écran) -->
+<div id="bg-decor" aria-hidden="true">
+  <svg id="bg-fuji" viewBox="0 0 1200 420" preserveAspectRatio="xMidYMax slice">
+    <circle cx="530" cy="128" r="58" fill="#e0533d" opacity=".10"/>
+    <path fill="#221c17" d="M0,420 L0,352 C120,330 220,344 330,358 C420,368 520,360 600,368 L600,420 Z" opacity=".8"/>
+    <path fill="#221c17" d="M1200,420 L1200,340 C1100,326 1010,342 920,356 C860,364 800,362 760,368 L760,420 Z" opacity=".6"/>
+    <path fill="#26201a" d="M330,420 C540,296 664,168 736,72 Q750,54 764,72 C836,168 980,300 1180,420 Z"/>
+    <path fill="#453b31" d="M736,72 Q750,54 764,72 C778,91 792,112 807,134 L790,127 L773,148 L757,130 L741,152 L724,131 L706,140 C717,117 727,95 736,72 Z"/>
+  </svg>
+  <svg id="bg-branch" viewBox="0 0 420 300">
+    <g fill="none" stroke="#3a2f27" stroke-width="7" stroke-linecap="round">
+      <path d="M430,34 C350,52 300,74 252,108"/>
+      <path d="M318,66 C296,102 284,130 280,164" stroke-width="5"/>
+      <path d="M282,92 C258,104 240,120 228,138" stroke-width="4"/>
+    </g>
+    <g fill="#d98a92" opacity=".55">
+      <g transform="translate(250,110)"><circle r="7"/><circle cx="11" cy="-5" r="7"/><circle cx="8" cy="9" r="7"/><circle cx="-8" cy="9" r="7"/><circle cx="-11" cy="-5" r="7"/></g>
+      <g transform="translate(279,166) scale(.85)"><circle r="7"/><circle cx="11" cy="-5" r="7"/><circle cx="8" cy="9" r="7"/><circle cx="-8" cy="9" r="7"/><circle cx="-11" cy="-5" r="7"/></g>
+      <g transform="translate(226,140) scale(.7)"><circle r="7"/><circle cx="11" cy="-5" r="7"/><circle cx="8" cy="9" r="7"/><circle cx="-8" cy="9" r="7"/><circle cx="-11" cy="-5" r="7"/></g>
+      <g transform="translate(320,64) scale(.75)"><circle r="7"/><circle cx="11" cy="-5" r="7"/><circle cx="8" cy="9" r="7"/><circle cx="-8" cy="9" r="7"/><circle cx="-11" cy="-5" r="7"/></g>
+      <g transform="translate(360,50) scale(.6)"><circle r="7"/><circle cx="11" cy="-5" r="7"/><circle cx="8" cy="9" r="7"/><circle cx="-8" cy="9" r="7"/><circle cx="-11" cy="-5" r="7"/></g>
+    </g>
+    <g fill="#e0533d" opacity=".5">
+      <circle cx="250" cy="110" r="2.5"/><circle cx="279" cy="166" r="2.2"/><circle cx="226" cy="140" r="1.8"/>
+      <circle cx="320" cy="64" r="2"/><circle cx="360" cy="50" r="1.6"/>
+    </g>
+  </svg>
+  <i class="petal" style="left:12%;animation-duration:26s;animation-delay:0s"></i>
+  <i class="petal" style="left:30%;animation-duration:32s;animation-delay:9s;width:8px;height:7px"></i>
+  <i class="petal" style="left:55%;animation-duration:24s;animation-delay:4s"></i>
+  <i class="petal" style="left:70%;animation-duration:30s;animation-delay:14s;width:12px;height:9px"></i>
+  <i class="petal" style="left:84%;animation-duration:27s;animation-delay:6s;width:9px;height:7px"></i>
+  <i class="petal" style="left:93%;animation-duration:22s;animation-delay:1s"></i>
+</div>
 <div class="wrap">
   <header>
     <div class="logo"><span class="jp">栞</span>Shiori</div>
