@@ -5,7 +5,7 @@
    - assets (icônes, manifest, JSZip CDN) : cache d'abord + rafraîchissement en tâche de fond.
    - Google (auth GSI / API Drive) : jamais interceptés (toujours réseau).
    Bump VERSION pour invalider le cache lors d'une mise à jour. */
-const VERSION = "shiori-v2";
+const VERSION = "shiori-v3";
 
 const APP_SHELL = "/kobo-converter.html";
 const CORE = [
@@ -48,8 +48,45 @@ function isGoogle(url) {
          /(^|\.)gstatic\.com$/.test(url.hostname);
 }
 
+/* Cible de partage Android : « Partager → Shiori » envoie les fichiers en POST
+   sur /share ; on les range dans IndexedDB puis on ouvre l'app, qui les
+   récupère au chargement. */
+function openShioriDB() {
+  return new Promise((resolve, reject) => {
+    const r = indexedDB.open("shiori", 2);
+    r.onupgradeneeded = () => {
+      const db = r.result;
+      if (!db.objectStoreNames.contains("queue"))  db.createObjectStore("queue",  { keyPath: "id" });
+      if (!db.objectStoreNames.contains("shared")) db.createObjectStore("shared", { autoIncrement: true });
+    };
+    r.onsuccess = () => resolve(r.result);
+    r.onerror = () => reject(r.error);
+  });
+}
+async function handleShare(event) {
+  try {
+    const form = await event.request.formData();
+    const files = form.getAll("files").filter(f => f && typeof f.name === "string");
+    if (files.length) {
+      const db = await openShioriDB();
+      await new Promise((res, rej) => {
+        const tx = db.transaction("shared", "readwrite");
+        files.forEach(f => tx.objectStore("shared").add(f));
+        tx.oncomplete = res; tx.onerror = () => rej(tx.error);
+      });
+    }
+  } catch (e) { /* au pire, l'app s'ouvre sans les fichiers */ }
+  return Response.redirect("/?shared=1", 303);
+}
+
 self.addEventListener("fetch", (event) => {
   const req = event.request;
+  let shareUrl;
+  try { shareUrl = new URL(req.url); } catch { shareUrl = null; }
+  if (req.method === "POST" && shareUrl && shareUrl.pathname === "/share") {
+    event.respondWith(handleShare(event));
+    return;
+  }
   if (req.method !== "GET") return;
 
   let url;

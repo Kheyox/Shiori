@@ -66,6 +66,33 @@ Hosting* → **Run workflow**.
 > Le JSON du compte de service est sensible : ne le commit jamais dans le dépôt,
 > garde-le uniquement dans le secret GitHub.
 
+## En faire une « vraie app » (Windows / Android)
+
+### Windows — déjà prêt
+Ouvre le site dans Chrome ou Edge → bouton **« Installer l'app »**. Shiori
+devient une application fenêtrée avec son icône dans le menu Démarrer.
+Grâce aux `file_handlers` du manifest, tu peux associer les `.cbz` à Shiori :
+clic droit sur un fichier → *Ouvrir avec* → Shiori (après installation).
+
+### Android — APK via PWABuilder (Trusted Web Activity)
+Pour une **application Android installable** (APK, distribuable ou publiable
+sur le Play Store) :
+
+1. Va sur https://www.pwabuilder.com et entre `https://shiori-5be31.web.app`.
+2. Onglet **Android** → **Generate package** (garde le package proposé, ex.
+   `app.web.shiori_5be31.twa`, ou choisis le tien).
+3. PWABuilder te fournit un **APK signé** + l'**empreinte SHA-256** de la
+   clé de signature (fichier `signing.keystore` à conserver !).
+4. Colle cette empreinte dans `.well-known/assetlinks.json` (à la place du
+   placeholder), même package name, puis redéploie (`push` sur `main`).
+   → C'est ce qui fait disparaître la barre d'adresse : Google vérifie que
+   l'app et le site t'appartiennent tous les deux.
+5. Installe l'APK (ou téléverse le `.aab` sur le Play Store, compte
+   développeur 25 $ une fois).
+
+L'app Android profite alors du **partage système** (« Partager → Shiori »
+depuis n'importe quelle app) déclaré dans le manifest.
+
 ## Comment c'est branché
 
 - **`firebase.json`** — config Hosting. Sert tout le dépôt (`"public": "."`),

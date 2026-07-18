@@ -2037,8 +2037,12 @@ function qIdb(){
   return new Promise((res,rej)=>{
     if(qdb) return res(qdb);
     if(!("indexedDB" in window)) return rej(new Error("noidb"));
-    const r=indexedDB.open("shiori",1);
-    r.onupgradeneeded=()=>{ r.result.createObjectStore("queue",{keyPath:"id"}); };
+    const r=indexedDB.open("shiori",2);
+    r.onupgradeneeded=()=>{
+      const db=r.result;
+      if(!db.objectStoreNames.contains("queue"))  db.createObjectStore("queue",{keyPath:"id"});
+      if(!db.objectStoreNames.contains("shared")) db.createObjectStore("shared",{autoIncrement:true});
+    };
     r.onsuccess=()=>{ qdb=r.result; res(qdb); };
     r.onerror=()=>rej(r.error);
   });
@@ -2175,6 +2179,36 @@ $("q-run-drive").addEventListener("click",()=>runQueue(async()=>{
   return makeDriveSink(dest.folderId,dest.folderName);
 }));
 qRestore();
+
+/* ---------- Entrées « app » : partage Android + double-clic fichier ---------- */
+// Fichiers reçus via « Partager → Shiori » (déposés en IndexedDB par le SW).
+async function intakeSharedFiles(){
+  try{
+    const db=await qIdb();
+    const files=await new Promise((res,rej)=>{
+      const tx=db.transaction("shared","readwrite");
+      const st=tx.objectStore("shared");
+      const rq=st.getAll();
+      rq.onsuccess=()=>{ st.clear(); };
+      tx.oncomplete=()=>res(rq.result||[]);
+      tx.onerror=()=>rej(tx.error);
+    });
+    if(files.length) await handleFiles(files);
+  }catch(e){}
+}
+if(location.search.includes("shared=1")){
+  history.replaceState(null,"","/");
+  intakeSharedFiles();
+}
+// Double-clic sur un .cbz/.pdf/.epub (app installée) : le fichier arrive ici.
+if("launchQueue" in window){
+  launchQueue.setConsumer(async(params)=>{
+    if(!params.files || !params.files.length) return;
+    const files=[];
+    for(const h of params.files){ try{ files.push(await h.getFile()); }catch(e){} }
+    if(files.length) handleFiles(files);
+  });
+}
 
 /* ---------- Préréglages (1 clic → jeu de réglages cohérent) ---------- */
 const PRESETS={

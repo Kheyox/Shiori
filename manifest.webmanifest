@@ -12,6 +12,31 @@
   "background_color": "#1a1714",
   "theme_color": "#1a1714",
   "categories": ["utilities", "books", "productivity"],
+  "file_handlers": [
+    {
+      "action": "/",
+      "accept": {
+        "application/vnd.comicbook+zip": [".cbz"],
+        "application/zip": [".zip"],
+        "application/x-cbr": [".cbr"],
+        "application/pdf": [".pdf"],
+        "application/epub+zip": [".epub"]
+      }
+    }
+  ],
+  "share_target": {
+    "action": "/share",
+    "method": "POST",
+    "enctype": "multipart/form-data",
+    "params": {
+      "files": [
+        {
+          "name": "files",
+          "accept": ["application/zip", "application/pdf", "application/epub+zip", "image/*", ".cbz", ".zip", ".cbr", ".pdf", ".epub"]
+        }
+      ]
+    }
+  },
   "icons": [
     { "src": "/icons/icon.svg", "type": "image/svg+xml", "sizes": "any" },
     { "src": "/icons/icon-192.png", "type": "image/png", "sizes": "192x192", "purpose": "any" },
