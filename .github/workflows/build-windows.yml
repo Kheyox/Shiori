@@ -7,6 +7,10 @@ on:
   workflow_dispatch:
   push:
     tags: ['v*']
+    branches: [main]
+    paths:
+      - 'src-tauri/**'
+      - '.github/workflows/build-windows.yml'
 
 permissions:
   contents: write
