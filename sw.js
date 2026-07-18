@@ -5,7 +5,7 @@
    - assets (icônes, manifest, JSZip CDN) : cache d'abord + rafraîchissement en tâche de fond.
    - Google (auth GSI / API Drive) : jamais interceptés (toujours réseau).
    Bump VERSION pour invalider le cache lors d'une mise à jour. */
-const VERSION = "shiori-v1";
+const VERSION = "shiori-v2";
 
 const APP_SHELL = "/kobo-converter.html";
 const CORE = [

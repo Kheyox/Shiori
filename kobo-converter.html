@@ -197,6 +197,16 @@
         <p class="sub" id="job-count">0 fichier</p>
 
         <div class="field">
+          <label class="lbl" for="preset">Préréglage</label>
+          <select id="preset">
+            <option value="" selected>— réglages manuels —</option>
+            <option value="bw">Manga N&amp;B net</option>
+            <option value="color">Couleur (auto)</option>
+            <option value="faded">Scan délavé</option>
+          </select>
+        </div>
+
+        <div class="field">
           <label class="lbl" for="profile">Appareil</label>
           <select id="profile">
             <option value="1264x1680" selected>Kobo Libra Colour — 1264×1680</option>
@@ -334,6 +344,7 @@ const $ = id => document.getElementById(id);
 const els = {
   drop:$("drop"), file:$("file"), workspace:$("workspace"),
   profile:$("profile"), customDims:$("custom-dims"), cw:$("cw"), ch:$("ch"),
+  preset:$("preset"),
   colormode:$("colormode"), rtl:$("rtl"), dblmode:$("dblmode"), rotdir:$("rotdir"), rotdirField:$("rotdir-field"),
   rename:$("rename"), renameField:$("rename-field"), renametpl:$("renametpl"), renamePreview:$("rename-preview"),
   levels:$("levels"), trim:$("trim"), sharpen:$("sharpen"),
@@ -367,7 +378,7 @@ function opts(){
 
 /* ---------- Réglages mémorisés (localStorage) ---------- */
 const LS_KEY="shiori_settings_v1";
-const SETTINGS_IDS=["profile","cw","ch","colormode","rtl","dblmode","rotdir","rename","renametpl","levels","trim","sharpen","gamma","quality"];
+const SETTINGS_IDS=["preset","profile","cw","ch","colormode","rtl","dblmode","rotdir","rename","renametpl","levels","trim","sharpen","gamma","quality"];
 function saveSettings(){
   try{
     const s={};
@@ -941,8 +952,31 @@ async function runConvert(dirHandle){
     els.progTxt.textContent=`Tome ${j+1}/${nJobs} · ${job.name} — ${done}/${total} pages`;
   };
 
+  let skipped=0;
   for(let j=0;j<nJobs;j++){
     const job=state.jobs[j];
+    const base=outputBaseName(job);
+    // Suffixe « (Kobo) » seulement sans renommage (pour ne pas écraser la source).
+    const filename=base+(els.rename.checked?"":" (Kobo)")+".cbz";
+
+    // Reprise : si le tome est déjà dans le dossier (conversion précédente
+    // interrompue ou refaite), on le saute au lieu de tout reconvertir.
+    if(dirHandle){
+      try{
+        const fh=await dirHandle.getFileHandle(filename);   // sans create
+        const f=await fh.getFile();
+        if(f.size>0){
+          skipped++;
+          done+=job.pages.length;
+          els.progFill.style.width=Math.round(done/total*100)+"%";
+          els.progTxt.textContent=`Tome ${j+1}/${nJobs} · ${job.name} — déjà présent, ignoré`;
+          state.outputs.push({filename, blob:null, pageCount:job.pages.length, saved:true});
+          addResult(filename, null, job.pages.length, "déjà présent — ignoré");
+          continue;
+        }
+      }catch(e){} // absent ⇒ on convertit
+    }
+
     const zip=new JSZip();
     const pad=String(job.pages.length*2).length;
     let src=null;
@@ -969,15 +1003,11 @@ async function runConvert(dirHandle){
       zip.file(String(outIdx).padStart(pad,"0")+".jpg", b); outIdx++; outCount++;
     }
 
-    const base=outputBaseName(job);
     const meta=parseName(job.rawName||job.name);
     zip.file("ComicInfo.xml", comicInfoXML({
       title:base, series:meta.series, number:meta.tome, count:outCount, rtl:o.rtl,
     }));
     const cbz=await zip.generateAsync({type:"blob",compression:"STORE"});
-    // Suffixe « (Kobo) » seulement sans renommage (pour ne pas écraser la source).
-    // Avec renommage, le modèle donne déjà un nom propre.
-    const filename=base+(els.rename.checked?"":" (Kobo)")+".cbz";
     if(dirHandle){
       // Écriture au fil de l'eau : on écrit le tome puis on libère le blob.
       // Rien ne s'accumule en mémoire ⇒ des centaines de tomes possibles.
@@ -999,8 +1029,9 @@ async function runConvert(dirHandle){
     }
     await new Promise(r=>setTimeout(r,0)); // laisse respirer le GC entre les tomes
   }
+  const conv=nJobs-skipped;
   els.progTxt.textContent = dirHandle
-    ? `Terminé ✓ — ${nJobs} tome${nJobs>1?"s":""} écrit${nJobs>1?"s":""} dans le dossier`
+    ? `Terminé ✓ — ${conv} tome${conv>1?"s":""} écrit${conv>1?"s":""}${skipped?` · ${skipped} déjà présent${skipped>1?"s":""} (ignoré${skipped>1?"s":""})`:""}`
     : `Terminé ✓ — ${nJobs} tome${nJobs>1?"s":""}`;
   els.progFill.style.width="100%";
   renderResultsHeader();
@@ -1121,8 +1152,8 @@ ${lines.join("\n")}
 </ComicInfo>`;
 }
 
-function addResult(filename, blob, pageCount){
-  const sizeMB=blob?(blob.size/1048576).toFixed(1)+" Mo":"enregistré";
+function addResult(filename, blob, pageCount, note){
+  const sizeMB=blob?(blob.size/1048576).toFixed(1)+" Mo":(note||"enregistré");
   const row=document.createElement("div");
   row.className="res";
   row.innerHTML=`<span class="chk">✓</span>
@@ -1133,9 +1164,10 @@ function addResult(filename, blob, pageCount){
     const a=document.createElement("a");
     a.className="dl"; a.href=URL.createObjectURL(blob); a.download=filename; a.textContent="Télécharger";
     row.appendChild(a);
-  }else{      // déjà écrit sur le disque (écriture au fil de l'eau)
+  }else{      // déjà écrit sur le disque (écriture au fil de l'eau / reprise)
     const tag=document.createElement("span");
-    tag.className="meta"; tag.style.color="var(--ok)"; tag.textContent="↳ dans le dossier";
+    tag.className="meta"; tag.style.color="var(--ok)";
+    tag.textContent=note?"↷ ignoré":"↳ dans le dossier";
     row.appendChild(tag);
   }
   els.results.appendChild(row);
@@ -1370,6 +1402,27 @@ els.renametpl.addEventListener("input",updateRenamePreview);
 $("settings").addEventListener("input", saveSettings);
 $("settings").addEventListener("change", saveSettings);
 
+/* ---------- Préréglages (1 clic → jeu de réglages cohérent) ---------- */
+const PRESETS={
+  bw:    {colormode:"gray", sharpen:true,  levels:false, gamma:"1",    quality:"85"},
+  color: {colormode:"auto", sharpen:true,  levels:false, gamma:"1",    quality:"88"},
+  faded: {colormode:"gray", sharpen:true,  levels:true,  gamma:"0.95", quality:"85"},
+};
+els.preset.addEventListener("change",()=>{
+  const p=PRESETS[els.preset.value];
+  if(!p) return;
+  els.colormode.value=p.colormode;
+  els.sharpen.checked=p.sharpen;
+  els.levels.checked=p.levels;
+  els.gamma.value=p.gamma;  els.gammaV.textContent=(+p.gamma).toFixed(2);
+  els.quality.value=p.quality; els.qualityV.textContent=p.quality;
+  saveSettings(); schedulePreview();
+});
+// Toute modif manuelle d'un réglage couvert par le préréglage repasse en « manuels »
+["colormode","sharpen","levels","gamma","quality"].forEach(id=>{
+  $(id).addEventListener("input",()=>{ els.preset.value=""; });
+});
+
 // pager — walks the device-page stream (a wide planche counts as 1–3 device pages)
 els.prev.addEventListener("click",()=>{
   if(state.subPos>0){ state.subPos--; renderPreview(); }
@@ -1432,8 +1485,40 @@ syncUI();
 // Enregistre le service worker (hors-ligne + installable). Nécessite un contexte
 // sécurisé : ça marche sur https:// (Firebase) et sur http://localhost.
 if ("serviceWorker" in navigator) {
-  window.addEventListener("load", () => {
-    navigator.serviceWorker.register("/sw.js").catch(err => console.warn("SW non enregistré :", err));
+  window.addEventListener("load", async () => {
+    let reg;
+    try{ reg=await navigator.serviceWorker.register("/sw.js"); }
+    catch(err){ console.warn("SW non enregistré :", err); return; }
+
+    // Notification « nouvelle version » : quand un nouveau service worker est
+    // installé alors que la page est déjà contrôlée, on propose de recharger.
+    const showUpdateBanner=()=>{
+      if(document.getElementById("upd-banner")) return;
+      const b=document.createElement("div");
+      b.id="upd-banner";
+      b.style.cssText="position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:9999;"+
+        "background:var(--ink);color:#fff;padding:11px 16px;border-radius:12px;display:flex;gap:14px;"+
+        "align-items:center;box-shadow:0 6px 24px rgba(0,0,0,.35);font-size:14px";
+      b.innerHTML=`<span>Nouvelle version de Shiori disponible</span>`;
+      const btn=document.createElement("button");
+      btn.textContent="Recharger";
+      btn.style.cssText="background:#fff;color:var(--ink);border:0;border-radius:8px;padding:6px 13px;font-weight:700;cursor:pointer;font-family:inherit";
+      btn.onclick=()=>location.reload();
+      b.appendChild(btn);
+      document.body.appendChild(b);
+    };
+    reg.addEventListener("updatefound", () => {
+      const nw=reg.installing;
+      if(!nw) return;
+      nw.addEventListener("statechange", () => {
+        if(nw.state==="installed" && navigator.serviceWorker.controller) showUpdateBanner();
+      });
+    });
+    // Vérifie périodiquement (PWA laissée ouverte longtemps) et au retour au premier plan.
+    setInterval(()=>reg.update().catch(()=>{}), 30*60*1000);
+    document.addEventListener("visibilitychange", ()=>{
+      if(document.visibilityState==="visible") reg.update().catch(()=>{});
+    });
   });
 }
 
