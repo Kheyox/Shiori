@@ -78,7 +78,7 @@ jobs:
           BUBBLEWRAP_KEY_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
         run: |
           # versionCode croissant à chaque build (requis pour mettre à jour l'app)
-          jq ".appVersionCode = ${{ github.run_number }} | .appVersion = \"1.1.${{ github.run_number }}\"" \
+          jq ".appVersionCode = ${{ github.run_number }} | .appVersion = \"1.1.${{ github.run_number }}\" | .appVersionName = \"1.1.${{ github.run_number }}\"" \
             twa-manifest.json > twa-manifest.tmp && mv twa-manifest.tmp twa-manifest.json
           # « yes » répond aux invites : installation du JDK/SDK par Bubblewrap
           # lui-même (le SDK préinstallé du runner est refusé par sa validation)
@@ -123,3 +123,14 @@ jobs:
           name: Shiori-Android
           path: app-release-signed.apk
           if-no-files-found: error
+
+      - name: Publier dans la Release « latest »
+        if: steps.check.outputs.configured == 'true'
+        run: cp app-release-signed.apk Shiori.apk
+      - uses: softprops/action-gh-release@v2
+        if: steps.check.outputs.configured == 'true'
+        with:
+          tag_name: latest
+          name: "Shiori — dernières builds"
+          body: "Téléchargements toujours à jour : **Shiori-Setup.exe** (Windows) et **Shiori.apk** (Android). Remplacés automatiquement à chaque build."
+          files: Shiori.apk
