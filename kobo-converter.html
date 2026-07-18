@@ -1218,6 +1218,22 @@ function fmtDur(secs){
   return `${h} h ${String(m%60).padStart(2,"0")}`;
 }
 
+/* ---------- Notification de fin ----------
+   Notification système quand une conversion (ou toute la file) se termine —
+   seulement si ça a duré (>20 s) ou si l'app n'est pas au premier plan, pour
+   ne pas notifier les petites conversions qu'on regarde de toute façon. */
+function askNotifPermission(){          // appelé sur le clic Convertir (geste utilisateur requis)
+  try{ if("Notification" in window && Notification.permission==="default") Notification.requestPermission(); }catch(e){}
+}
+function maybeNotify(title,body,secs){
+  try{
+    if(!("Notification" in window) || Notification.permission!=="granted") return;
+    if(!document.hidden && (secs||0)<20) return;
+    const n=new Notification(title,{body,icon:"/icons/icon-192.png",tag:"shiori-done"});
+    n.onclick=()=>{ try{ window.focus(); }catch(e){} n.close(); };
+  }catch(e){}
+}
+
 /* Le web ne permet pas de continuer un traitement quand l'app est quittée ou
    l'onglet mis en veille par l'OS. On atténue : wake lock (l'écran ne s'éteint
    pas ⇒ la conversion continue tant que l'app reste au premier plan) et
@@ -1236,7 +1252,7 @@ window.addEventListener("beforeunload",(e)=>{
 });
 
 async function runConvert(sink,append){
-  converting=true; acquireWakeLock();
+  converting=true; acquireWakeLock(); askNotifPermission();
   els.convert.disabled=true; els.reset.disabled=true;
   if(els.convertDir) els.convertDir.disabled=true;
   if(els.convertDrive) els.convertDrive.disabled=true;
@@ -1344,6 +1360,7 @@ async function runConvert(sink,append){
         if(job.delEntries && pageFails===0 && outCount>0) cleanup.push(...job.delEntries);
       }catch(e){
         els.progTxt.textContent="Écriture interrompue ("+sink.label+") : "+e.message+" — relance pour reprendre où ça s'est arrêté.";
+        maybeNotify("Shiori — conversion interrompue", e.message+" · relance pour reprendre", 999);
         els.convert.disabled=false; els.reset.disabled=false;
         if(els.convertDir) els.convertDir.disabled=false;
         if(els.convertDrive) els.convertDrive.disabled=false;
@@ -1367,7 +1384,12 @@ async function runConvert(sink,append){
     ? `Terminé ✓ — ${conv} tome${conv>1?"s":""} écrit${conv>1?"s":""} dans ${sink.label}${skipped?` · ${skipped} déjà présent${skipped>1?"s":""} (ignoré${skipped>1?"s":""})`:""}`
     : `Terminé ✓ — ${nJobs} tome${nJobs>1?"s":""}`;
   els.progFill.style.width="100%";
-  if(!append) renderResultsHeader();   // en file d'attente, le récap global vient à la fin
+  if(!append){
+    renderResultsHeader();   // en file d'attente, le récap global vient à la fin
+    maybeNotify("Shiori — conversion terminée ✓",
+      `${conv} tome${conv>1?"s":""}${sink?` → ${sink.label}`:""}${skipped?` · ${skipped} ignoré${skipped>1?"s":""}`:""} · ${fmtDur(state.report.secs)}`,
+      state.report.secs);
+  }
   els.convert.disabled=false; els.reset.disabled=false;
   if(els.convertDir) els.convertDir.disabled=false;
   if(els.convertDrive) els.convertDrive.disabled=false;
@@ -2159,6 +2181,8 @@ async function runQueue(sinkFactory){
   }
   state.report=agg;
   renderResultsHeader();   // récap global (tous lots confondus)
+  maybeNotify("Shiori — file d'attente terminée ✓",
+    `${agg.tomes} tome${agg.tomes>1?"s":""}${agg.sinkLabel?` → ${agg.sinkLabel}`:""} · ${fmtDur(agg.secs)}`, agg.secs);
   qRunning=false; renderQueue();
   loadSettings();          // revient à tes réglages mémorisés
 }
