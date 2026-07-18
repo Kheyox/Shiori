@@ -53,11 +53,7 @@ jobs:
 
       - name: Installer Bubblewrap
         if: steps.check.outputs.configured == 'true'
-        run: |
-          npm install -g @bubblewrap/cli
-          mkdir -p ~/.bubblewrap
-          printf '{"jdkPath":"%s","androidSdkPath":"%s"}\n' "$JAVA_HOME" "$ANDROID_HOME" > ~/.bubblewrap/config.json
-          cat ~/.bubblewrap/config.json
+        run: npm install -g @bubblewrap/cli
 
       - name: Clé de signature (générée au 1er run, puis stable)
         if: steps.check.outputs.configured == 'true'
@@ -84,7 +80,12 @@ jobs:
           # versionCode croissant à chaque build (requis pour mettre à jour l'app)
           jq ".appVersionCode = ${{ github.run_number }} | .appVersion = \"1.1.${{ github.run_number }}\"" \
             twa-manifest.json > twa-manifest.tmp && mv twa-manifest.tmp twa-manifest.json
-          bubblewrap build --skipPwaValidation
+          # « yes » répond aux invites : installation du JDK/SDK par Bubblewrap
+          # lui-même (le SDK préinstallé du runner est refusé par sa validation)
+          # + acceptation de la licence Android.
+          yes | bubblewrap update --skipVersionUpgrade || true
+          yes | bubblewrap build --skipPwaValidation
+          ls -la app-release-signed.apk
 
       - name: Mettre à jour assetlinks.json (empreinte de signature)
         if: steps.check.outputs.configured == 'true'
