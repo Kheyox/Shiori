@@ -55,7 +55,7 @@ jobs:
           
           # Met à jour la version de l'application dans tauri.conf.json
           $conf = Get-Content src-tauri/tauri.conf.json -Raw
-          $conf = $conf -replace '"version": "1.1.0"', `'"version": "$V_SEMVER"'`
+          $conf = $conf -replace '"version": "1\.1\.0"', "`"version`": `"$V_SEMVER`""
           Set-Content src-tauri/tauri.conf.json $conf -NoNewline
 
           $h0 = Get-Content dist/index.html -Raw
@@ -87,8 +87,10 @@ jobs:
       - name: Générer le manifeste d'auto-update (update.json)
         shell: pwsh
         run: |
-          $sigFile = Get-ChildItem src-tauri/target/release/bundle/nsis/*.sig | Select-Object -First 1
-          if ($sigFile) {
+          # Tauri v2 + createUpdaterArtifacts génère un .nsis.zip + .nsis.zip.sig
+          $sigFile = Get-ChildItem src-tauri/target/release/bundle/nsis/*.nsis.zip.sig -ErrorAction SilentlyContinue | Select-Object -First 1
+          $zipFile = Get-ChildItem src-tauri/target/release/bundle/nsis/*.nsis.zip -ErrorAction SilentlyContinue | Select-Object -First 1
+          if ($sigFile -and $zipFile) {
               $sigContent = (Get-Content $sigFile.FullName -Raw).Trim()
               $count = git rev-list --count HEAD
               $V_SEMVER = "1.1.$count"
@@ -100,14 +102,16 @@ jobs:
                   platforms = @{
                       "windows-x86_64" = @{
                           signature = $sigContent
-                          url = "https://github.com/Kheyox/Shiori/releases/download/latest/Shiori-Setup.exe"
+                          url = "https://github.com/Kheyox/Shiori/releases/download/latest/Shiori-Setup.nsis.zip"
                       }
                   }
               }
               $updateJson | ConvertTo-Json -Depth 5 | Set-Content -Path update.json -Encoding utf8
+              # Copie le zip sous un nom stable pour la release
+              Copy-Item $zipFile.FullName Shiori-Setup.nsis.zip
               Write-Host "update.json généré avec succès."
           } else {
-              Write-Warning "Fichier .sig introuvable (clé de signature absente ?)."
+              Write-Warning "Fichier .nsis.zip.sig introuvable — TAURI_SIGNING_PRIVATE_KEY manquant ou build non signé ?"
           }
 
       - name: Publier l'installateur en artefact
@@ -130,6 +134,7 @@ jobs:
           body: "Téléchargements toujours à jour : **Shiori-Setup.exe** (Windows) et **Shiori.apk** (Android). Remplacés automatiquement à chaque build."
           files: |
             Shiori-Setup.exe
+            Shiori-Setup.nsis.zip
             update.json
 
       - name: Release versionnée (si tag v*)
