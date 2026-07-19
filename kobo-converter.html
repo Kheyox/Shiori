@@ -34,17 +34,20 @@
     --radius:14px;
   }
   *{box-sizing:border-box}
-  html,body{margin:0;background:var(--bg);color:var(--text);
+  html{margin:0;background:radial-gradient(circle at 62% 80%, #2f251c 0%, #1a1714 100%);color:var(--text);
     font-family:"Inter",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,system-ui,sans-serif;
     -webkit-font-smoothing:antialiased;}
-  body{min-height:100vh;padding:24px 18px 56px;line-height:1.5}
+  html::before{content:"";position:fixed;inset:0;background-image:radial-gradient(rgba(224, 83, 61, 0.04) 1.5px, transparent 0);
+    background-size:16px 16px;pointer-events:none;z-index:-2;}
+  body{min-height:100vh;padding:24px 18px 56px;line-height:1.5;background:transparent}
   .wrap{max-width:980px;margin:0 auto}
 
   /* Header */
   header{display:flex;align-items:baseline;gap:14px;flex-wrap:wrap;margin-bottom:6px}
   .logo{font-weight:800;font-size:30px;letter-spacing:-.02em;
     font-family:"Hiragino Mincho ProN","Yu Mincho",Georgia,"Times New Roman",serif;}
-  .logo .jp{color:var(--ink);font-weight:400;margin-right:8px}
+  .logo .jp{color:var(--bg);background:var(--ink);border-radius:4px;padding:1px 7px;font-weight:800;margin-right:8px;
+    border:1px solid var(--ink-deep);box-shadow:2px 2px 0px rgba(0,0,0,0.25);display:inline-block;font-family:"Hiragino Mincho ProN","Yu Mincho",serif;}
   .tag{color:var(--muted);font-size:14px}
   .device{margin-left:auto;font-size:12.5px;color:var(--muted);
     border:1px solid var(--border);border-radius:999px;padding:5px 12px;
@@ -58,18 +61,18 @@
   .lede{color:var(--muted);font-size:14.5px;margin:10px 0 22px;max-width:62ch}
 
   /* Drop zone */
-  .drop{border:1.5px dashed var(--border);border-radius:var(--radius);
-    padding:42px 24px;text-align:center;cursor:pointer;transition:.18s;
-    background:var(--surface);position:relative}
-  .drop:hover,.drop.hot{border-color:var(--ink);background:var(--surface-2)}
+  .drop{border:2px dashed var(--border);border-radius:var(--radius);
+    padding:42px 24px;text-align:center;cursor:pointer;transition:.2s;
+    background:var(--surface);position:relative;box-shadow:6px 6px 0px rgba(0,0,0,0.35);overflow:hidden;}
+  .drop:hover,.drop.hot{border-color:var(--ink);background:var(--surface-2);border-style:solid;box-shadow:6px 6px 0px var(--ink-deep);}
+  .drop:hover::after,.drop.hot::after{content:"";position:absolute;inset:0;background-image:radial-gradient(var(--border) 1.5px, transparent 0);
+    background-size:10px 10px;opacity:0.15;pointer-events:none;z-index:1;}
+  .drop *{position:relative;z-index:2;}
   .drop.busy{border-color:var(--ink);pointer-events:none;animation:pulse 1.2s ease-in-out infinite}
   @keyframes pulse{0%,100%{opacity:1}50%{opacity:.55}}
-  /* Décor de fond (Fuji + sakura) — discret, jamais interactif.
-     Le fond opaque reste sur html ; body devient transparent pour laisser
-     voir le décor placé en z-index négatif. */
-  body{background:transparent}
+  /* Décor de fond (Fuji + sakura) — discret, jamais interactif. */
   #bg-decor{position:fixed;inset:0;pointer-events:none;z-index:-1;overflow:hidden}
-  #bg-fuji{position:absolute;bottom:0;left:0;width:100%;height:min(44vh,400px)}
+  #bg-fuji{position:absolute;bottom:0;left:0;width:100%;height:min(50vh,450px)}
   #bg-branch{position:absolute;top:-8px;right:-14px;width:min(400px,52vw)}
   .petal{position:absolute;top:0;display:block;width:10px;height:8px;background:#c97f88;
     border-radius:80% 0 55% 55% / 55% 0 80% 45%;opacity:0;
@@ -117,8 +120,8 @@
   .grid{display:grid;grid-template-columns:300px 1fr;gap:22px;margin-top:22px}
   @media(max-width:760px){.grid{grid-template-columns:1fr}}
 
-  .panel{background:var(--surface);border:1px solid var(--border);
-    border-radius:var(--radius);padding:18px}
+  .panel{background:var(--surface);border:2px solid var(--border);
+    border-radius:var(--radius);padding:18px;box-shadow:5px 5px 0px rgba(0,0,0,0.3);transition:transform .2s;}
   .panel h3{margin:0 0 4px;font-size:11px;letter-spacing:.14em;text-transform:uppercase;
     color:var(--muted);font-weight:700}
   .panel .sub{font-size:12px;color:var(--muted-2);margin:0 0 16px}
@@ -129,7 +132,7 @@
     font-size:13.5px;font-weight:500;margin-bottom:7px}
   label.lbl .val{color:var(--ink);font-variant-numeric:tabular-nums;font-size:12.5px}
   select,input[type=number],input[type=text]{width:100%;background:var(--bg);color:var(--text);
-    border:1px solid var(--border);border-radius:9px;padding:9px 10px;font-size:13.5px;font-family:inherit}
+    border:2.5px solid var(--border);border-radius:9px;padding:8px 10px;font-size:13.5px;font-family:inherit;font-weight:600;}
   select:focus,input:focus{outline:2px solid var(--ink);outline-offset:1px;border-color:transparent}
   input[type=range]{width:100%;accent-color:var(--ink);margin:2px 0}
 
@@ -137,8 +140,8 @@
     padding:9px 0;font-size:13.5px;user-select:none}
   .toggle input{position:absolute;opacity:0;pointer-events:none}
   .sw{width:38px;height:22px;border-radius:999px;background:var(--surface-2);
-    border:1px solid var(--border);position:relative;flex:0 0 auto;transition:.16s}
-  .sw::after{content:"";position:absolute;top:2px;left:2px;width:16px;height:16px;
+    border:2px solid var(--border);position:relative;flex:0 0 auto;transition:.16s}
+  .sw::after{content:"";position:absolute;top:2px;left:2px;width:14px;height:14px;
     border-radius:50%;background:var(--muted);transition:.16s}
   .toggle input:checked + .sw{background:var(--ink);border-color:var(--ink-deep)}
   .toggle input:checked + .sw::after{transform:translateX(16px);background:#fff}
@@ -151,23 +154,23 @@
   .pv-head{display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap}
   .pv-head h3{margin:0;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);font-weight:700}
   .pager{margin-left:auto;display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--muted)}
-  .pager button{background:var(--surface-2);border:1px solid var(--border);color:var(--text);
-    width:28px;height:28px;border-radius:7px;cursor:pointer;font-size:14px;line-height:1}
-  .pager button:hover{border-color:var(--ink)}
+  .pager button{background:var(--surface-2);border:2px solid var(--border);color:var(--text);
+    width:28px;height:28px;border-radius:7px;cursor:pointer;font-size:14px;line-height:1;transition:.15s}
+  .pager button:hover{border-color:var(--ink);background:var(--surface-2)}
   .pager button:disabled{opacity:.35;cursor:default}
-  .rtl-badge{font-size:10.5px;color:var(--ink);border:1px solid var(--border);
-    border-radius:6px;padding:2px 7px;letter-spacing:.05em}
+  .rtl-badge{font-size:10.5px;color:var(--ink);border:2.5px solid var(--border);
+    border-radius:6px;padding:2px 7px;letter-spacing:.05em;font-weight:700;background:var(--bg)}
 
   /* Kobo device mockup */
   .kobo-wrap{display:flex;flex-direction:column;align-items:center;gap:12px}
   .kobo{position:relative;width:100%;max-width:360px;background:#15120e;
     border-radius:20px;padding:18px 18px 30px;
-    box-shadow:0 22px 50px -22px #000,0 0 0 1px #000,inset 0 0 0 1px #423a2e;}
+    box-shadow:0 22px 50px -22px #000,0 0 0 2.5px #000,inset 0 0 0 1px #423a2e;}
   .kobo::after{content:"";position:absolute;left:50%;bottom:12px;transform:translateX(-50%);
     width:30px;height:6px;border-radius:999px;background:#2f281e}
   .kobo-screen{background:#f6f1e6;border-radius:5px;overflow:hidden;
     display:flex;align-items:center;justify-content:center;
-    box-shadow:inset 0 0 0 1px #000,inset 0 2px 12px -4px rgba(0,0,0,.4);
+    box-shadow:inset 0 0 0 2px #000,inset 0 2px 12px -4px rgba(0,0,0,.4);
     aspect-ratio:1264/1680}
   .kobo-screen canvas,.kobo-screen img{max-width:100%;max-height:100%;display:block}
   .kobo-screen.empty{color:#8a7f6d;font-size:12px;background:#e9e2d3}
@@ -176,13 +179,15 @@
 
   /* Convert bar */
   .runbar{display:flex;align-items:center;gap:16px;margin-top:22px;flex-wrap:wrap}
-  .btn{background:var(--ink);color:#fff;border:none;border-radius:11px;
-    padding:13px 26px;font-size:15px;font-weight:600;cursor:pointer;
-    font-family:inherit;transition:.15s;letter-spacing:.01em}
-  .btn:hover{background:var(--ink-deep)}
-  .btn:disabled{opacity:.5;cursor:default}
-  .btn.ghost{background:transparent;color:var(--muted);border:1px solid var(--border)}
-  .btn.ghost:hover{color:var(--text);border-color:var(--ink);background:transparent}
+  .btn{background:var(--ink);color:#fff;border:2.5px solid var(--ink-deep);border-radius:11px;
+    padding:11px 26px;font-size:15px;font-weight:700;cursor:pointer;
+    font-family:inherit;letter-spacing:.01em;box-shadow:3px 3px 0px rgba(0,0,0,0.3);
+    transition:transform 0.08s ease, box-shadow 0.08s ease, background 0.15s ease;}
+  .btn:hover{background:var(--ink-deep);transform:translate(-1px,-1px);box-shadow:4px 4px 0px rgba(0,0,0,0.35);}
+  .btn:active{transform:translate(1.5px, 1.5px);box-shadow:1px 1px 0px rgba(0,0,0,0.25);}
+  .btn:disabled{opacity:.5;cursor:default;transform:none!important;box-shadow:none!important;}
+  .btn.ghost{background:transparent;color:var(--text);border:2.5px solid var(--border);box-shadow:3px 3px 0px rgba(0,0,0,0.25);}
+  .btn.ghost:hover{color:var(--text);border-color:var(--ink);background:transparent;}
   .prog{flex:1;min-width:180px}
   .prog .bar{height:8px;background:var(--surface-2);border-radius:999px;overflow:hidden;border:1px solid var(--border)}
   .prog .fill{height:100%;width:0;background:var(--ink);transition:width .12s}
@@ -191,23 +196,27 @@
   /* Results */
   .results{margin-top:18px;display:flex;flex-direction:column;gap:10px}
   .res{display:flex;align-items:center;gap:13px;background:var(--surface);
-    border:1px solid var(--border);border-radius:11px;padding:13px 15px}
+    border:2px solid var(--border);border-radius:11px;padding:13px 15px;box-shadow:4px 4px 0px rgba(0,0,0,0.25);}
   .res .nm{font-weight:600;font-size:14px}
   .res .meta{font-size:12px;color:var(--muted)}
   .res .grow{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis}
-  .res .dl{background:var(--surface-2);border:1px solid var(--border);color:var(--text);
-    text-decoration:none;border-radius:8px;padding:8px 15px;font-size:13px;font-weight:600;white-space:nowrap}
-  .res .dl:hover{border-color:var(--ink);color:var(--ink)}
+  .res .dl{background:var(--surface-2);border:2px solid var(--border);color:var(--text);
+    text-decoration:none;border-radius:8px;padding:8px 15px;font-size:13px;font-weight:700;white-space:nowrap;box-shadow:2px 2px 0px rgba(0,0,0,0.2);
+    transition:transform 0.08s ease, box-shadow 0.08s ease;}
+  .res .dl:hover{border-color:var(--ink);color:var(--ink);transform:translate(-1px,-1px);box-shadow:3px 3px 0px rgba(0,0,0,0.25);}
+  .res .dl:active{transform:translate(1px,1px);box-shadow:1px 1px 0px rgba(0,0,0,0.15);}
   .res .chk{color:var(--ok);font-size:16px}
   .res-actions{display:flex;align-items:center;gap:12px;flex-wrap:wrap;
-    background:var(--surface-2);border:1px solid var(--border);border-radius:11px;padding:12px 15px;margin-bottom:4px}
+    background:var(--surface-2);border:2px solid var(--border);border-radius:11px;padding:12px 15px;margin-bottom:4px;box-shadow:4px 4px 0px rgba(0,0,0,0.25);}
   .res-actions .ra-info{font-size:13px;color:var(--muted);margin-right:auto}
-  .ra-btn{background:var(--ink);color:#fff;border:none;border-radius:9px;
-    padding:9px 16px;font-size:13.5px;font-weight:600;cursor:pointer;font-family:inherit}
-  .ra-btn:hover{background:var(--ink-deep)}
-  .ra-btn:disabled{opacity:.55;cursor:default}
-  .ra-btn.drive{background:transparent;color:var(--text);border:1px solid var(--border)}
-  .ra-btn.drive:hover{border-color:var(--ink);color:var(--ink);background:transparent}
+  .ra-btn{background:var(--ink);color:#fff;border:2.5px solid var(--ink-deep);border-radius:9px;
+    padding:8px 16px;font-size:13.5px;font-weight:700;cursor:pointer;font-family:inherit;box-shadow:3px 3px 0px rgba(0,0,0,0.25);
+    transition:transform 0.08s ease, box-shadow 0.08s ease, background 0.15s ease;}
+  .ra-btn:hover{background:var(--ink-deep);transform:translate(-1px,-1px);box-shadow:4px 4px 0px rgba(0,0,0,0.3);}
+  .ra-btn:active{transform:translate(1.5px,1.5px);box-shadow:1px 1px 0px rgba(0,0,0,0.25);}
+  .ra-btn:disabled{opacity:.55;cursor:default;transform:none!important;box-shadow:none!important;}
+  .ra-btn.drive{background:transparent;color:var(--text);border:2.5px solid var(--border);}
+  .ra-btn.drive:hover{border-color:var(--ink);color:var(--ink);background:transparent;}
 
   footer{margin-top:40px;color:var(--muted-2);font-size:12px;line-height:1.7;
     border-top:1px solid var(--border);padding-top:18px}
@@ -221,11 +230,33 @@
      très discret pour ne pas gêner la lecture ; masqué aux lecteurs d'écran) -->
 <div id="bg-decor" aria-hidden="true">
   <svg id="bg-fuji" viewBox="0 0 1200 420" preserveAspectRatio="xMidYMax slice">
-    <circle cx="530" cy="128" r="58" fill="#e0533d" opacity=".10"/>
-    <path fill="#221c17" d="M0,420 L0,352 C120,330 220,344 330,358 C420,368 520,360 600,368 L600,420 Z" opacity=".8"/>
-    <path fill="#221c17" d="M1200,420 L1200,340 C1100,326 1010,342 920,356 C860,364 800,362 760,368 L760,420 Z" opacity=".6"/>
-    <path fill="#26201a" d="M330,420 C540,296 664,168 736,72 Q750,54 764,72 C836,168 980,300 1180,420 Z"/>
-    <path fill="#453b31" d="M736,72 Q750,54 764,72 C778,91 792,112 807,134 L790,127 L773,148 L757,130 L741,152 L724,131 L706,140 C717,117 727,95 736,72 Z"/>
+    <defs>
+      <radialGradient id="sun-glow" cx="50%" cy="50%" r="50%">
+        <stop offset="0%" stop-color="var(--ink)" stop-opacity="0.85"/>
+        <stop offset="30%" stop-color="var(--ink)" stop-opacity="0.5"/>
+        <stop offset="65%" stop-color="var(--ink)" stop-opacity="0.18"/>
+        <stop offset="100%" stop-color="var(--ink)" stop-opacity="0"/>
+      </radialGradient>
+    </defs>
+    <!-- Halo de soleil rougeoyant -->
+    <circle cx="750" cy="115" r="185" fill="url(#sun-glow)"/>
+    <!-- Soleil rouge (Diamond Fuji) -->
+    <circle cx="750" cy="115" r="62" fill="var(--ink)" opacity="0.8"/>
+    
+    <!-- Collines d'arrière-plan -->
+    <path fill="#221c17" d="M0,420 L0,352 C120,330 220,344 330,358 C420,368 520,360 600,368 L600,420 Z" opacity="0.9"/>
+    <path fill="#221c17" d="M1200,420 L1200,340 C1100,326 1010,342 920,356 C860,364 800,362 760,368 L760,420 Z" opacity="0.75"/>
+    
+    <!-- Corps du mont Fuji -->
+    <path fill="#2e2720" d="M330,420 C540,296 664,168 736,72 Q750,54 764,72 C836,168 980,300 1180,420 Z"/>
+    
+    <!-- Sommet enneigé (haute visibilité) -->
+    <path fill="#ece4d6" d="M736,72 Q750,54 764,72 C778,91 792,112 807,134 L790,127 L773,148 L757,130 L741,152 L724,131 L706,140 C717,117 727,95 736,72 Z"/>
+    
+    <!-- Nuages horizontaux traditionnels style estampe japonaise -->
+    <path fill="#1a1714" opacity="0.65" d="M 180,230 h 180 a 10,10 0 0 1 0,20 h -180 a 10,10 0 0 1 0,-20 z"/>
+    <path fill="#1a1714" opacity="0.5" d="M 880,180 h 220 a 8,8 0 0 1 0,16 h -220 a 8,8 0 0 1 0,-16 z"/>
+    <path fill="#1a1714" opacity="0.6" d="M 680,290 h 190 a 11,11 0 0 1 0,22 h -190 a 11,11 0 0 1 0,-22 z"/>
   </svg>
   <svg id="bg-branch" viewBox="0 0 420 300">
     <g fill="none" stroke="#3a2f27" stroke-width="7" stroke-linecap="round">
