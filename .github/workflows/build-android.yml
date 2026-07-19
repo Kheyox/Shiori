@@ -114,6 +114,7 @@ jobs:
             git config user.email "github-actions[bot]@users.noreply.github.com"
             git add .well-known/assetlinks.json
             git commit -m "assetlinks.json : empreinte de signature Android"
+            git checkout -- . || true   # jette les modifs de build (bump twa-manifest) qui bloquent le rebase
             git pull --rebase origin main
             git push
             echo "::notice::assetlinks.json mis à jour — le déploiement du site le publiera (plein écran sans barre d'adresse)."
