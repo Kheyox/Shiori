@@ -2628,7 +2628,7 @@ if(IS_DESKTOP){
       const btn=document.createElement("button");
       btn.textContent="Télécharger";
       btn.style.cssText="background:#fff;color:var(--ink);border:0;border-radius:8px;padding:6px 13px;font-weight:700;cursor:pointer;font-family:inherit";
-      const url="https://github.com/Kheyox/Shiori/actions/workflows/build-windows.yml";
+      const url="https://github.com/Kheyox/Shiori/releases/download/latest/Shiori-Setup.exe";
       btn.onclick=async()=>{
         try{ if(window.__TAURI__&&window.__TAURI__.opener){ await window.__TAURI__.opener.openUrl(url); return; } }catch(e){}
         try{ await navigator.clipboard.writeText(url); btn.textContent="Lien copié ✓ — colle-le dans ton navigateur"; }

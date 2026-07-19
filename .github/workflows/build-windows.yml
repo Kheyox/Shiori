@@ -24,6 +24,8 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-node@v4
         with:
@@ -40,6 +42,11 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force dist/vendor | Out-Null
           Copy-Item kobo-converter.html dist/index.html
+          # grave la version (compteur de commits) dans l'exe pour le bandeau de maj
+          $V = "r$(git rev-list --count HEAD)"
+          $h0 = Get-Content dist/index.html -Raw
+          $h0 = $h0 -replace 'const APP_VERSION="[^"]*"', "const APP_VERSION=`"$V`""
+          Set-Content dist/index.html $h0 -NoNewline
           Copy-Item -Recurse icons dist/icons
           Copy-Item manifest.webmanifest dist/
           # Vendorise les libs CDN pour que l'exe fonctionne sans internet

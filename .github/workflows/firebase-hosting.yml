@@ -36,6 +36,8 @@ jobs:
       - name: Checkout
         if: steps.check.outputs.configured == 'true'
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup Node
         if: steps.check.outputs.configured == 'true'
@@ -46,8 +48,9 @@ jobs:
       - name: Générer version.json (lu par l'app de bureau)
         if: steps.check.outputs.configured == 'true'
         run: |
-          V=$(grep -oP 'APP_VERSION="\K[0-9][0-9.]*' kobo-converter.html | head -1)
-          printf '{"version":"%s"}\n' "${V:-0}" > version.json
+          # version = compteur de commits : augmente tout seul à chaque changement
+          V="r$(git rev-list --count HEAD)"
+          printf '{"version":"%s"}\n' "$V" > version.json
           cat version.json
 
       - name: Installer la CLI Firebase
