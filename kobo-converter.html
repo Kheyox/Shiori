@@ -255,7 +255,7 @@
 <!-- Décor de fond : mont Fuji + branche de sakura + pétales (SVG inline,
      très discret pour ne pas gêner la lecture ; masqué aux lecteurs d'écran) -->
 <div id="bg-decor" aria-hidden="true">
-  <svg id="bg-fuji" viewBox="0 0 1200 650" preserveAspectRatio="xMidYMax meet">
+  <svg id="bg-fuji" viewBox="0 0 3000 800" preserveAspectRatio="xMidYMax slice">
     <defs>
       <!-- Sunset Glow (Warm gold to pink, matching photo) -->
       <radialGradient id="sun-glow" cx="50%" cy="50%" r="50%">
@@ -325,22 +325,22 @@
     </defs>
 
     <!-- Glowing Sunset Sky Halo (centered behind the mountain peak) -->
-    <circle cx="600" cy="230" r="300" fill="url(#sun-glow)"/>
+    <circle cx="1500" cy="300" r="500" fill="url(#sun-glow)"/>
 
-    <!-- Mount Fuji Body (Elegant, symmetrical classic cone - peak at y=190) -->
-    <path fill="#20182b" d="M 120,650 C 360,590 460,330 540,190 L 660,190 C 740,330 840,590 1080,650 Z"/>
+    <!-- Mount Fuji Body (Massive, majestic, sweeping exponential cone - peak at y=250) -->
+    <path fill="#1d1526" d="M -200,800 C 600,750 1100,450 1420,250 L 1580,250 C 1900,450 2400,750 3200,800 Z"/>
 
-    <!-- Snow Cap (Clean, classic V-shaped snow cap - no mustache bumps!) -->
-    <path fill="#f4effa" d="M 495,270 C 525,250 565,260 600,280 C 635,260 675,250 705,270 L 660,190 L 540,190 Z"/>
+    <!-- Snow Cap (Clean, elegant, classic W/V-shaped drape) -->
+    <path fill="#f4effa" d="M 1340,380 C 1380,330 1450,350 1500,380 C 1550,350 1620,330 1660,380 L 1580,250 L 1420,250 Z"/>
 
-    <!-- Mountain Base Mist Layers (Layered fog from the photo) -->
-    <path fill="#543c66" opacity="0.35" d="M0,650 L0,520 Q350,460 600,510 T1200,500 L1200,650 Z"/>
-    <path fill="#77558f" opacity="0.2" d="M0,650 L0,550 Q400,490 800,540 T1200,530 L1200,650 Z"/>
+    <!-- Mountain Base Mist Layers (Spanning the entire 3000px width) -->
+    <path fill="#543c66" opacity="0.35" d="M0,800 L0,650 Q750,550 1500,600 T3000,580 L3000,800 Z"/>
+    <path fill="#77558f" opacity="0.25" d="M0,800 L0,680 Q1000,580 2000,650 T3000,600 L3000,800 Z"/>
 
-    <!-- Soft Mist Lines (fading horizontal layers) -->
-    <rect class="mist-line" x="50" y="440" width="380" height="6" rx="3" fill="url(#mist-grad)"/>
-    <rect class="mist-line" x="770" y="420" width="380" height="5" rx="2.5" fill="url(#mist-grad)"/>
-    <rect class="mist-line" x="250" y="560" width="700" height="8" rx="4" fill="url(#mist-grad)"/>
+    <!-- Soft Mist Lines (long and drifting horizontally) -->
+    <rect class="mist-line" x="100" y="550" width="1200" height="12" rx="6" fill="url(#mist-grad)"/>
+    <rect class="mist-line" x="1600" y="520" width="1000" height="9" rx="4.5" fill="url(#mist-grad)"/>
+    <rect class="mist-line" x="500" y="680" width="2200" height="14" rx="7" fill="url(#mist-grad)"/>
   </svg>
 
   <!-- Branch Top-Right (dense clusters) -->
