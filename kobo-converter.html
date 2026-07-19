@@ -231,32 +231,43 @@
 <div id="bg-decor" aria-hidden="true">
   <svg id="bg-fuji" viewBox="0 0 1200 420" preserveAspectRatio="xMidYMax slice">
     <defs>
+      <!-- Sun Glow -->
       <radialGradient id="sun-glow" cx="50%" cy="50%" r="50%">
-        <stop offset="0%" stop-color="var(--ink)" stop-opacity="0.85"/>
-        <stop offset="30%" stop-color="var(--ink)" stop-opacity="0.5"/>
-        <stop offset="65%" stop-color="var(--ink)" stop-opacity="0.18"/>
+        <stop offset="0%" stop-color="var(--ink)" stop-opacity="0.65"/>
+        <stop offset="40%" stop-color="var(--ink)" stop-opacity="0.3"/>
+        <stop offset="70%" stop-color="var(--ink)" stop-opacity="0.08"/>
         <stop offset="100%" stop-color="var(--ink)" stop-opacity="0"/>
       </radialGradient>
+      <!-- Mist Gradient -->
+      <linearGradient id="mist-grad" x1="0%" y1="0%" x2="100%" y2="0%">
+        <stop offset="0%" stop-color="var(--paper)" stop-opacity="0"/>
+        <stop offset="25%" stop-color="var(--paper)" stop-opacity="0.12"/>
+        <stop offset="50%" stop-color="var(--paper)" stop-opacity="0.25"/>
+        <stop offset="75%" stop-color="var(--paper)" stop-opacity="0.12"/>
+        <stop offset="100%" stop-color="var(--paper)" stop-opacity="0"/>
+      </linearGradient>
     </defs>
-    <!-- Halo de soleil rougeoyant -->
-    <circle cx="750" cy="115" r="185" fill="url(#sun-glow)"/>
-    <!-- Soleil rouge (Diamond Fuji) -->
-    <circle cx="750" cy="115" r="62" fill="var(--ink)" opacity="0.8"/>
-    
-    <!-- Collines d'arrière-plan -->
-    <path fill="#221c17" d="M0,420 L0,352 C120,330 220,344 330,358 C420,368 520,360 600,368 L600,420 Z" opacity="0.9"/>
-    <path fill="#221c17" d="M1200,420 L1200,340 C1100,326 1010,342 920,356 C860,364 800,362 760,368 L760,420 Z" opacity="0.75"/>
-    
-    <!-- Corps du mont Fuji -->
-    <path fill="#2e2720" d="M330,420 C540,296 664,168 736,72 Q750,54 764,72 C836,168 980,300 1180,420 Z"/>
-    
-    <!-- Sommet enneigé (haute visibilité) -->
-    <path fill="#ece4d6" d="M736,72 Q750,54 764,72 C778,91 792,112 807,134 L790,127 L773,148 L757,130 L741,152 L724,131 L706,140 C717,117 727,95 736,72 Z"/>
-    
-    <!-- Nuages horizontaux traditionnels style estampe japonaise -->
-    <path fill="#1a1714" opacity="0.65" d="M 180,230 h 180 a 10,10 0 0 1 0,20 h -180 a 10,10 0 0 1 0,-20 z"/>
-    <path fill="#1a1714" opacity="0.5" d="M 880,180 h 220 a 8,8 0 0 1 0,16 h -220 a 8,8 0 0 1 0,-16 z"/>
-    <path fill="#1a1714" opacity="0.6" d="M 680,290 h 190 a 11,11 0 0 1 0,22 h -190 a 11,11 0 0 1 0,-22 z"/>
+
+    <!-- Sun Halo -->
+    <circle cx="600" cy="180" r="220" fill="url(#sun-glow)"/>
+    <!-- Sun (Perfect Circle, aligned with peak) -->
+    <circle cx="600" cy="180" r="95" fill="var(--ink)" opacity="0.75"/>
+
+    <!-- Background Hills (very soft silhouette) -->
+    <path fill="#1a1714" d="M0,420 L0,370 Q350,330 600,375 T1200,360 L1200,420 Z" opacity="0.8"/>
+
+    <!-- Mount Fuji Body (Classic symmetrical volcanic cone) -->
+    <path fill="#241e1a" d="M 120,420 C 380,380 480,240 555,100 L 575,105 L 600,97 L 625,105 L 645,100 C 720,240 820,380 1080,420 Z"/>
+
+    <!-- Snow Cap (Beautiful Hokusai-style snow claws) -->
+    <path fill="#f3ede1" d="M 515,178 C 532,146 544,122 555,100 L 575,105 L 600,97 L 625,105 L 645,100 C 656,122 668,146 685,178 C 655,200 645,170 630,192 C 620,180 610,210 600,185 C590,210 580,180 570,192 C 555,170 545,200 515,178 Z"/>
+
+    <!-- Soft Mist Lines (replaces gray pills) -->
+    <rect x="50" y="260" width="450" height="7" rx="3.5" fill="url(#mist-grad)"/>
+    <rect x="720" y="220" width="430" height="5" rx="2.5" fill="url(#mist-grad)"/>
+    <rect x="350" y="340" width="600" height="9" rx="4.5" fill="url(#mist-grad)"/>
+    <rect x="180" y="160" width="300" height="4" rx="2" fill="url(#mist-grad)"/>
+    <rect x="750" y="140" width="280" height="3" rx="1.5" fill="url(#mist-grad)"/>
   </svg>
   <svg id="bg-branch" viewBox="0 0 420 300">
     <g fill="none" stroke="#3a2f27" stroke-width="7" stroke-linecap="round">
