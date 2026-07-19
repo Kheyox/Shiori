@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="fr">
 <head>
 <meta charset="UTF-8">
@@ -41,6 +41,7 @@
   .wrap{max-width:980px;margin:0 auto}
 
   /* Header */
+  header .logo, header .tag, header .device { text-shadow: 0 2px 8px rgba(0,0,0,0.85); }
   header{display:flex;align-items:baseline;gap:14px;flex-wrap:wrap;margin-bottom:6px}
   .logo{font-weight:800;font-size:30px;letter-spacing:-.02em;
     font-family:"Hiragino Mincho ProN","Yu Mincho",Georgia,"Times New Roman",serif;}
@@ -88,9 +89,6 @@
   /* Décor de fond (Fuji + sakura) — discret, jamais interactif. */
   #bg-decor{position:fixed;inset:0;pointer-events:none;z-index:-1;overflow:hidden}
   #bg-fuji{position:absolute;bottom:0;left:0;width:100%;height:100%;overflow:visible}
-  #bg-branch{position:absolute;top:-20px;right:-20px;width:min(700px,80vw);filter:drop-shadow(0px 12px 35px rgba(0,0,0,0.55));z-index:3;pointer-events:none;}
-  #bg-branch-left{position:absolute;bottom:-20px;left:-20px;width:min(650px,75vw);filter:drop-shadow(0px 12px 35px rgba(0,0,0,0.55));z-index:3;pointer-events:none;}
-  
   /* Animations de la brume */
   .mist-line{animation:mist-drift 24s ease-in-out infinite alternate;}
   .mist-line:nth-child(even){animation-duration:32s;animation-delay:-8s;}
@@ -254,292 +252,168 @@
 <!-- Décor de fond : mont Fuji + branche de sakura + pétales (SVG inline,
      très discret pour ne pas gêner la lecture ; masqué aux lecteurs d'écran) -->
 <div id="bg-decor" aria-hidden="true">
-  <svg id="bg-fuji" viewBox="0 0 3000 800" preserveAspectRatio="xMidYMax slice">
+  <div style="position:absolute;inset:0;background:radial-gradient(circle at center, transparent 0%, rgba(18,14,30,0.6) 100%);pointer-events:none;z-index:2"></div>
+  <svg id="bg-fuji" viewBox="0 0 1920 1080" preserveAspectRatio="xMidYMid slice" style="position:absolute;inset:0;width:100%;height:100%;z-index:1">
     <defs>
-      <!-- Sunset Glow (Warm gold to pink, matching photo) -->
-      <radialGradient id="sun-glow" cx="50%" cy="50%" r="50%">
-        <stop offset="0%" stop-color="#ffd5b8" stop-opacity="0.8"/>
-        <stop offset="25%" stop-color="#e25d80" stop-opacity="0.55"/>
-        <stop offset="60%" stop-color="#4e214d" stop-opacity="0.2"/>
-        <stop offset="100%" stop-color="#120e1e" stop-opacity="0"/>
-      </radialGradient>
-      <!-- Mist Gradient (Soft lavender fog) -->
-      <linearGradient id="mist-grad" x1="0%" y1="0%" x2="100%" y2="0%">
-        <stop offset="0%" stop-color="var(--paper)" stop-opacity="0"/>
-        <stop offset="25%" stop-color="var(--paper)" stop-opacity="0.08"/>
-        <stop offset="50%" stop-color="var(--paper)" stop-opacity="0.2"/>
-        <stop offset="75%" stop-color="var(--paper)" stop-opacity="0.08"/>
-        <stop offset="100%" stop-color="var(--paper)" stop-opacity="0"/>
+      <!-- Sky Gradient (Blue to Golden Sunset) -->
+      <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stop-color="#4a76a8"/>
+        <stop offset="50%" stop-color="#8ba9b8"/>
+        <stop offset="75%" stop-color="#f6d3a2"/>
+        <stop offset="100%" stop-color="#df9a80"/>
+      </linearGradient>
+      <!-- Water Gradient -->
+      <linearGradient id="water" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stop-color="#d9a38f"/>
+        <stop offset="15%" stop-color="#e3cb9f"/>
+        <stop offset="50%" stop-color="#8ba9b8"/>
+        <stop offset="100%" stop-color="#4a76a8"/>
+      </linearGradient>
+      <!-- Fog Gradient -->
+      <linearGradient id="fog" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stop-color="#f5ccbd" stop-opacity="0"/>
+        <stop offset="50%" stop-color="#f5ccbd" stop-opacity="0.85"/>
+        <stop offset="100%" stop-color="#e1afaa" stop-opacity="1"/>
       </linearGradient>
 
-      <!-- Sakura Petal Gradient -->
+      <!-- Sakura Petal (More Rose) -->
       <linearGradient id="petal-grad" x1="0%" y1="100%" x2="0%" y2="0%">
-        <stop offset="0%" stop-color="#e25d80"/>
-        <stop offset="60%" stop-color="#ffccd7"/>
-        <stop offset="100%" stop-color="#fff0f3"/>
+        <stop offset="0%" stop-color="#d6496e"/>
+        <stop offset="60%" stop-color="#ff9eb0"/>
+        <stop offset="100%" stop-color="#ffe6ec"/>
       </linearGradient>
-      <!-- Single Notched Petal Shape -->
       <path id="sakura-petal" fill="url(#petal-grad)" d="M 0,0 C -7,-13 -10,-25 -3,-29 C -1,-30 1,-30 3,-28 C 10,-25 7,-13 0,0"/>
-      
-      <!-- Detailed Sakura Flower -->
       <g id="sakura-flower">
         <use href="#sakura-petal"/>
         <use href="#sakura-petal" transform="rotate(72)"/>
         <use href="#sakura-petal" transform="rotate(144)"/>
         <use href="#sakura-petal" transform="rotate(216)"/>
         <use href="#sakura-petal" transform="rotate(288)"/>
-        <!-- Flower Center -->
         <circle cx="0" cy="0" r="3.5" fill="#a0284e"/>
-        <!-- Pistil / Stamens -->
-        <g stroke="#911b3f" stroke-width="0.7">
-          <line x1="0" y1="0" x2="0" y2="-9"/>
-          <line x1="0" y1="0" x2="6.3" y2="-6.3"/>
-          <line x1="0" y1="0" x2="9" y2="0"/>
-          <line x1="0" y1="0" x2="6.3" y2="6.3"/>
-          <line x1="0" y1="0" x2="0" y2="9"/>
-          <line x1="0" y1="0" x2="-6.3" y2="6.3"/>
-          <line x1="0" y1="0" x2="-9" y2="0"/>
-          <line x1="0" y1="0" x2="-6.3" y2="-6.3"/>
-        </g>
-        <!-- Pollen heads -->
-        <g fill="#ffd075">
-          <circle cx="0" cy="-9" r="1.1"/>
-          <circle cx="6.3" cy="-6.3" r="1.1"/>
-          <circle cx="9" cy="0" r="1.1"/>
-          <circle cx="6.3" cy="6.3" r="1.1"/>
-          <circle cx="0" cy="9" r="1.1"/>
-          <circle cx="-6.3" cy="6.3" r="1.1"/>
-          <circle cx="-9" cy="0" r="1.1"/>
-          <circle cx="-6.3" cy="-6.3" r="1.1"/>
-        </g>
-        <circle cx="0" cy="0" r="2.2" fill="#fca1b9"/>
+        <circle cx="0" cy="0" r="2" fill="#fca1b9"/>
       </g>
       
-      <!-- Flower Bud -->
-      <g id="sakura-bud">
-        <path fill="#851637" d="M0,0 C-3,-5 -3,-10 0,-12 C3,-10 3,-5 0,0"/>
-        <path fill="url(#petal-grad)" d="M-1,-2 C-4,-6 -2,-11 0,-13 C2,-11 4,-6 1,-2 Z" transform="rotate(-15)"/>
-        <path fill="url(#petal-grad)" d="M1,-2 C-2,-6 -1,-11 1,-13 C3,-11 5,-6 2,-2 Z" transform="rotate(15)"/>
+      <!-- Massive Sakura Canopy Blob -->
+      <g id="sakura-canopy-blob">
+        <!-- Solid background blobs for dense volume -->
+        <circle cx="0" cy="0" r="40" fill="#ff9eb0" opacity="0.95"/>
+        <circle cx="-20" cy="15" r="30" fill="#ffb7c5" opacity="0.9"/>
+        <circle cx="25" cy="-10" r="35" fill="#ffcdd8" opacity="0.95"/>
+        <circle cx="10" cy="25" r="25" fill="#d6496e" opacity="0.8"/>
+        <!-- Detailed Foreground Flowers -->
+        <use href="#sakura-flower" x="-20" y="-15" transform="scale(2) rotate(15)"/>
+        <use href="#sakura-flower" x="15" y="-25" transform="scale(2.5) rotate(-35)"/>
+        <use href="#sakura-flower" x="25" y="10" transform="scale(1.8) rotate(80)"/>
+        <use href="#sakura-flower" x="-10" y="25" transform="scale(2.8) rotate(-60)"/>
+        <use href="#sakura-flower" x="-30" y="15" transform="scale(2.1) rotate(110)"/>
+        <use href="#sakura-flower" x="10" y="0" transform="scale(3.2) rotate(45)"/>
+        <use href="#sakura-flower" x="0" y="-10" transform="scale(1.9) rotate(15)"/>
+        <use href="#sakura-flower" x="20" y="25" transform="scale(2.4) rotate(90)"/>
+        <use href="#sakura-flower" x="-15" y="-30" transform="scale(2.6) rotate(20)"/>
+        <use href="#sakura-flower" x="5" y="15" transform="scale(2) rotate(-20)"/>
+      </g>
+
+      <!-- Mountain Structure to reuse for Reflection -->
+      <g id="mountain-structure">
+        <!-- Base Silhouette -->
+        <polygon points="960,350 300,750 1620,750" fill="#7a5c53"/> <!-- Right lit side -->
+        <polygon points="960,350 300,750 960,750" fill="#303856"/> <!-- Left shadow side -->
+        
+        <!-- Left Snow Fingers (Shadow) -->
+        <polygon points="960,350 600,568 960,450" fill="#c5d3e8"/>
+        <polygon points="850,416 800,650 920,460" fill="#c5d3e8"/>
+        <polygon points="750,477 700,680 820,520" fill="#c5d3e8"/>
+        <polygon points="650,537 600,710 720,580" fill="#c5d3e8"/>
+        <polygon points="550,598 500,730 620,640" fill="#c5d3e8"/>
+        <polygon points="960,350 920,600 960,480" fill="#c5d3e8"/>
+
+        <!-- Right Snow Fingers (Lit) -->
+        <polygon points="960,350 1320,568 960,450" fill="#fce4c4"/>
+        <polygon points="1070,416 1120,650 1000,460" fill="#fce4c4"/>
+        <polygon points="1170,477 1220,680 1100,520" fill="#fce4c4"/>
+        <polygon points="1270,537 1320,710 1200,580" fill="#fce4c4"/>
+        <polygon points="1370,598 1420,730 1300,640" fill="#fce4c4"/>
+        <polygon points="960,350 1000,600 960,480" fill="#fce4c4"/>
       </g>
     </defs>
 
-    <!-- Glowing Sunset Sky Halo (centered behind the mountain peak) -->
-    <circle cx="1500" cy="300" r="500" fill="url(#sun-glow)"/>
+    <!-- 1. Sky -->
+    <rect width="1920" height="1080" fill="url(#sky)"/>
 
-    <!-- Mount Fuji Silhouette Clip (ensures perfect snow cap edges) -->
-    <clipPath id="fuji-clip">
-      <path d="M -200,800 C 600,750 1100,450 1430,250 Q 1500,255 1570,250 C 1900,450 2400,750 3200,800 Z"/>
-    </clipPath>
+    <!-- 2. Mountain -->
+    <use href="#mountain-structure"/>
 
-    <!-- Mount Fuji Body (Massive, majestic, sweeping exponential cone - peak at y=250) -->
-    <path fill="#1d1526" d="M -200,800 C 600,750 1100,450 1430,250 Q 1500,255 1570,250 C 1900,450 2400,750 3200,800 Z"/>
+    <!-- 3. Base Fog / Clouds -->
+    <rect x="0" y="680" width="1920" height="100" fill="url(#fog)"/>
+    <path fill="#f5ccbd" opacity="0.6" d="M 0,720 Q 150,680 300,710 T 600,690 T 900,720 T 1200,680 T 1500,710 T 1800,690 L 1920,710 L 1920,780 L 0,780 Z"/>
+    <path fill="#e1afaa" opacity="0.8" d="M 0,740 Q 200,700 400,730 T 800,710 T 1200,740 T 1600,710 T 1920,730 L 1920,780 L 0,780 Z"/>
 
-    <!-- Snow Cap (Gentle, organic, realistic snow drip) -->
-    <path clip-path="url(#fuji-clip)" fill="#f4effa" d="M 1100,450 
-      Q 1160,340 1220,340 
-      Q 1250,340 1280,370 
-      Q 1310,370 1340,330 
-      Q 1370,330 1400,380 
-      Q 1430,380 1460,320 
-      Q 1480,320 1500,360 
-      Q 1520,360 1540,320 
-      Q 1570,320 1600,380 
-      Q 1630,380 1660,330 
-      Q 1690,330 1720,370 
-      Q 1750,370 1780,340 
-      Q 1840,340 1900,450 
-      L 2000,0 L 1000,0 Z"/>
+    <!-- 4. Lake Base -->
+    <rect x="0" y="780" width="1920" height="300" fill="url(#water)"/>
+    
+    <!-- 5. Reflection of Mountain & Clouds -->
+    <g transform="translate(0, 1560) scale(1, -1)" opacity="0.35">
+      <use href="#mountain-structure"/>
+      <!-- Reflected Fog -->
+      <path fill="#e1afaa" opacity="0.8" d="M 0,740 Q 200,700 400,730 T 800,710 T 1200,740 T 1600,710 T 1920,730 L 1920,780 L 0,780 Z"/>
+    </g>
 
-    <!-- Mountain Base Mist Layers (Spanning the entire 3000px width) -->
-    <path fill="#543c66" opacity="0.35" d="M0,800 L0,650 Q750,550 1500,600 T3000,580 L3000,800 Z"/>
-    <path fill="#77558f" opacity="0.25" d="M0,800 L0,680 Q1000,580 2000,650 T3000,600 L3000,800 Z"/>
+    <!-- 6. Water Ripples -->
+    <rect x="0" y="800" width="1920" height="1" fill="#fff" opacity="0.3"/>
+    <rect x="0" y="820" width="1920" height="2" fill="#fff" opacity="0.2"/>
+    <rect x="0" y="850" width="1920" height="3" fill="#fff" opacity="0.15"/>
+    <rect x="0" y="890" width="1920" height="5" fill="#fff" opacity="0.1"/>
+    <rect x="0" y="950" width="1920" height="8" fill="#fff" opacity="0.05"/>
+    <rect x="0" y="1020" width="1920" height="15" fill="#fff" opacity="0.03"/>
 
-    <!-- Soft Mist Lines (long and drifting horizontally) -->
-    <rect class="mist-line" x="100" y="550" width="1200" height="12" rx="6" fill="url(#mist-grad)"/>
-    <rect class="mist-line" x="1600" y="520" width="1000" height="9" rx="4.5" fill="url(#mist-grad)"/>
-    <rect class="mist-line" x="500" y="680" width="2200" height="14" rx="7" fill="url(#mist-grad)"/>
-  </svg>
+    <!-- 7. Sakura Canopies (Massive framing on top corners) -->
+    <!-- Top Left -->
+    <g transform="translate(100, 50)">
+      <use href="#sakura-canopy-blob" transform="scale(3)"/>
+      <use href="#sakura-canopy-blob" x="100" y="-20" transform="scale(3.5)"/>
+      <use href="#sakura-canopy-blob" x="220" y="-40" transform="scale(2.5)"/>
+      <use href="#sakura-canopy-blob" x="-40" y="120" transform="scale(3.2)"/>
+      <use href="#sakura-canopy-blob" x="80" y="100" transform="scale(2.2)"/>
+      <use href="#sakura-canopy-blob" x="180" y="60" transform="scale(2.8)"/>
+      <use href="#sakura-canopy-blob" x="300" y="0" transform="scale(2)"/>
+      <use href="#sakura-canopy-blob" x="-10" y="220" transform="scale(2.5)"/>
+      <use href="#sakura-canopy-blob" x="100" y="180" transform="scale(1.8)"/>
+    </g>
 
-  <!-- Branch Top-Right (Hyper-dense, majestic blooms) -->
-  <svg id="bg-branch" viewBox="0 0 500 400">
-    <!-- Sweep of the branch -->
-    <g fill="none" stroke="#2b201a" stroke-linecap="round">
-      <path d="M520,-20 Q400,20 250,150 T-20,350" stroke-width="20"/>
-      <path d="M380,50 Q300,100 250,200" stroke-width="10"/>
-      <path d="M250,150 Q180,220 120,250" stroke-width="8"/>
-      <path d="M160,250 Q100,320 80,380" stroke-width="6"/>
-      <path d="M300,140 Q250,220 260,280" stroke-width="5"/>
-      <path d="M450,10 Q380,-10 320,10" stroke-width="8"/>
-    </g>
-    <!-- Clusters! DENSE AND MASSIVE! -->
-    <!-- On main trunk -->
-    <g transform="translate(420, 30)">
-      <use href="#sakura-flower" transform="scale(2) rotate(15)"/>
-      <use href="#sakura-flower" x="15" y="-15" transform="scale(1.8) rotate(-35)"/>
-      <use href="#sakura-flower" x="-20" y="10" transform="scale(1.5) rotate(45)"/>
-      <use href="#sakura-flower" x="25" y="20" transform="scale(1.7) rotate(120)"/>
-      <use href="#sakura-bud" x="-30" y="-10" transform="scale(1.5) rotate(-20)"/>
-    </g>
-    <g transform="translate(320, 100)">
-      <use href="#sakura-flower" transform="scale(2.2) rotate(45)"/>
-      <use href="#sakura-flower" x="-20" y="-15" transform="scale(1.9) rotate(-15)"/>
-      <use href="#sakura-flower" x="25" y="10" transform="scale(1.8) rotate(70)"/>
-      <use href="#sakura-flower" x="-10" y="25" transform="scale(1.6) rotate(100)"/>
-      <use href="#sakura-bud" x="35" y="-20" transform="scale(1.5) rotate(20)"/>
-      <use href="#sakura-bud" x="-35" y="10" transform="scale(1.5) rotate(-60)"/>
-    </g>
-    <g transform="translate(200, 200)">
-      <use href="#sakura-flower" transform="scale(2.5) rotate(-10)"/>
-      <use href="#sakura-flower" x="25" y="20" transform="scale(1.8) rotate(35)"/>
-      <use href="#sakura-flower" x="-25" y="10" transform="scale(2) rotate(-50)"/>
-      <use href="#sakura-flower" x="10" y="-25" transform="scale(1.7) rotate(80)"/>
-      <use href="#sakura-bud" x="-30" y="-20" transform="scale(1.8) rotate(-45)"/>
-    </g>
-    <g transform="translate(80, 280)">
-      <use href="#sakura-flower" transform="scale(2.1) rotate(60)"/>
-      <use href="#sakura-flower" x="-15" y="-20" transform="scale(1.8) rotate(-20)"/>
-      <use href="#sakura-flower" x="20" y="15" transform="scale(1.6) rotate(110)"/>
-      <use href="#sakura-bud" x="30" y="-10" transform="scale(1.5) rotate(40)"/>
-    </g>
-    <!-- On Sub branch 1 -->
-    <g transform="translate(260, 200)">
-      <use href="#sakura-flower" transform="scale(1.9) rotate(25)"/>
-      <use href="#sakura-flower" x="15" y="-15" transform="scale(1.6) rotate(-15)"/>
-      <use href="#sakura-flower" x="-15" y="15" transform="scale(1.5) rotate(60)"/>
-    </g>
-    <!-- On Sub branch 4 -->
-    <g transform="translate(260, 280)">
-      <use href="#sakura-flower" transform="scale(1.8) rotate(-40)"/>
-      <use href="#sakura-flower" x="10" y="15" transform="scale(1.5) rotate(20)"/>
-      <use href="#sakura-bud" x="-15" y="-15" transform="scale(1.4) rotate(-60)"/>
-    </g>
-    <!-- On Sub branch 2 -->
-    <g transform="translate(120, 250)">
-      <use href="#sakura-flower" transform="scale(2) rotate(10)"/>
-      <use href="#sakura-flower" x="-20" y="5" transform="scale(1.7) rotate(-30)"/>
-      <use href="#sakura-flower" x="15" y="20" transform="scale(1.6) rotate(50)"/>
-      <use href="#sakura-bud" x="20" y="-15" transform="scale(1.5) rotate(15)"/>
-    </g>
-    <!-- On Sub branch 3 -->
-    <g transform="translate(80, 380)">
-      <use href="#sakura-flower" transform="scale(1.7) rotate(-20)"/>
-      <use href="#sakura-flower" x="-15" y="-10" transform="scale(1.4) rotate(40)"/>
-    </g>
-    <g transform="translate(120, 320)">
-      <use href="#sakura-flower" transform="scale(1.8) rotate(70)"/>
-      <use href="#sakura-flower" x="15" y="-10" transform="scale(1.5) rotate(-10)"/>
-    </g>
-    <!-- On Sub branch 5 -->
-    <g transform="translate(320, 10)">
-      <use href="#sakura-flower" transform="scale(1.9) rotate(5)"/>
-      <use href="#sakura-flower" x="-20" y="10" transform="scale(1.6) rotate(45)"/>
-    </g>
-    <!-- Extra random massive clusters to fill space -->
-    <g transform="translate(360, 130)">
-      <use href="#sakura-flower" transform="scale(2.3) rotate(-15)"/>
-      <use href="#sakura-flower" x="-25" y="15" transform="scale(1.8) rotate(30)"/>
-      <use href="#sakura-bud" x="25" y="20" transform="scale(1.7) rotate(60)"/>
-    </g>
-    <g transform="translate(180, 120)">
-      <use href="#sakura-flower" transform="scale(2) rotate(80)"/>
-      <use href="#sakura-flower" x="20" y="-10" transform="scale(1.5) rotate(10)"/>
+    <!-- Top Right -->
+    <g transform="translate(1820, 50)">
+      <use href="#sakura-canopy-blob" transform="scale(3)"/>
+      <use href="#sakura-canopy-blob" x="-100" y="-20" transform="scale(3.5)"/>
+      <use href="#sakura-canopy-blob" x="-220" y="-40" transform="scale(2.5)"/>
+      <use href="#sakura-canopy-blob" x="40" y="120" transform="scale(3.2)"/>
+      <use href="#sakura-canopy-blob" x="-80" y="100" transform="scale(2.2)"/>
+      <use href="#sakura-canopy-blob" x="-180" y="60" transform="scale(2.8)"/>
+      <use href="#sakura-canopy-blob" x="-300" y="0" transform="scale(2)"/>
+      <use href="#sakura-canopy-blob" x="10" y="220" transform="scale(2.5)"/>
+      <use href="#sakura-canopy-blob" x="-100" y="180" transform="scale(1.8)"/>
     </g>
   </svg>
 
-  <!-- Branch Bottom-Left (Hyper-dense, majestic blooms) -->
-  <svg id="bg-branch-left" viewBox="0 0 500 400">
-    <g fill="none" stroke="#2b201a" stroke-linecap="round">
-      <path d="M-20,420 Q150,300 300,180 T480,-20" stroke-width="20"/>
-      <path d="M100,340 Q150,220 220,150" stroke-width="10"/>
-      <path d="M200,240 Q280,180 350,140" stroke-width="8"/>
-      <path d="M300,180 Q380,100 420,40" stroke-width="6"/>
-      <path d="M150,220 Q200,100 220,50" stroke-width="5"/>
-    </g>
-    <!-- Clusters! -->
-    <g transform="translate(80, 360)">
-      <use href="#sakura-flower" transform="scale(2.5) rotate(-20)"/>
-      <use href="#sakura-flower" x="25" y="-15" transform="scale(1.8) rotate(35)"/>
-      <use href="#sakura-flower" x="-20" y="-20" transform="scale(1.9) rotate(-60)"/>
-      <use href="#sakura-flower" x="15" y="25" transform="scale(1.7) rotate(100)"/>
-    </g>
-    <g transform="translate(180, 280)">
-      <use href="#sakura-flower" transform="scale(2.2) rotate(15)"/>
-      <use href="#sakura-flower" x="-25" y="15" transform="scale(1.8) rotate(-45)"/>
-      <use href="#sakura-flower" x="20" y="-25" transform="scale(1.9) rotate(70)"/>
-      <use href="#sakura-flower" x="30" y="10" transform="scale(1.6) rotate(120)"/>
-      <use href="#sakura-bud" x="-35" y="-10" transform="scale(1.5) rotate(-20)"/>
-    </g>
-    <g transform="translate(280, 200)">
-      <use href="#sakura-flower" transform="scale(2.3) rotate(-40)"/>
-      <use href="#sakura-flower" x="-20" y="-20" transform="scale(1.9) rotate(25)"/>
-      <use href="#sakura-flower" x="25" y="15" transform="scale(1.8) rotate(-70)"/>
-      <use href="#sakura-bud" x="35" y="-15" transform="scale(1.6) rotate(40)"/>
-    </g>
-    <g transform="translate(380, 100)">
-      <use href="#sakura-flower" transform="scale(2) rotate(60)"/>
-      <use href="#sakura-flower" x="-15" y="20" transform="scale(1.6) rotate(-10)"/>
-      <use href="#sakura-flower" x="20" y="-15" transform="scale(1.7) rotate(80)"/>
-    </g>
-    <g transform="translate(150, 220)">
-      <use href="#sakura-flower" transform="scale(2.1) rotate(5)"/>
-      <use href="#sakura-flower" x="-20" y="-15" transform="scale(1.6) rotate(50)"/>
-      <use href="#sakura-flower" x="20" y="20" transform="scale(1.5) rotate(-30)"/>
-    </g>
-    <g transform="translate(220, 150)">
-      <use href="#sakura-flower" transform="scale(1.9) rotate(-50)"/>
-      <use href="#sakura-flower" x="-15" y="15" transform="scale(1.5) rotate(10)"/>
-    </g>
-    <g transform="translate(280, 180)">
-      <use href="#sakura-flower" transform="scale(1.8) rotate(35)"/>
-      <use href="#sakura-bud" x="20" y="-10" transform="scale(1.5) rotate(70)"/>
-    </g>
-    <g transform="translate(350, 140)">
-      <use href="#sakura-flower" transform="scale(2) rotate(-15)"/>
-      <use href="#sakura-flower" x="15" y="15" transform="scale(1.6) rotate(45)"/>
-      <use href="#sakura-bud" x="-20" y="-10" transform="scale(1.4) rotate(-40)"/>
-    </g>
-    <g transform="translate(420, 40)">
-      <use href="#sakura-flower" transform="scale(1.8) rotate(80)"/>
-      <use href="#sakura-flower" x="-15" y="15" transform="scale(1.5) rotate(20)"/>
-    </g>
-    <g transform="translate(220, 50)">
-      <use href="#sakura-flower" transform="scale(1.9) rotate(-30)"/>
-      <use href="#sakura-bud" x="-15" y="15" transform="scale(1.5) rotate(15)"/>
-    </g>
-    <g transform="translate(140, 290)">
-      <use href="#sakura-flower" transform="scale(2.4) rotate(45)"/>
-      <use href="#sakura-flower" x="25" y="-10" transform="scale(1.7) rotate(-20)"/>
-      <use href="#sakura-bud" x="-20" y="25" transform="scale(1.6) rotate(80)"/>
-    </g>
-    <g transform="translate(240, 110)">
-      <use href="#sakura-flower" transform="scale(2.1) rotate(-75)"/>
-      <use href="#sakura-flower" x="-20" y="-15" transform="scale(1.8) rotate(15)"/>
-    </g>
-    <g transform="translate(340, 230)">
-      <use href="#sakura-flower" transform="scale(2) rotate(10)"/>
-      <use href="#sakura-bud" x="15" y="-20" transform="scale(1.5) rotate(50)"/>
-    </g>
-  </svg>
-
-  <!-- Dense Falling Petals (Romantic Sakura Fubuki) -->
-  <i class="petal" style="left:5%;animation-duration:22s;animation-delay:0s;width:12px;height:10px"></i>
-  <i class="petal" style="left:15%;animation-duration:28s;animation-delay:8s;width:8px;height:7px"></i>
-  <i class="petal" style="left:28%;animation-duration:25s;animation-delay:3s;width:10px;height:9px"></i>
-  <i class="petal" style="left:42%;animation-duration:34s;animation-delay:11s;width:11px;height:9px"></i>
-  <i class="petal" style="left:56%;animation-duration:23s;animation-delay:1s;width:9px;height:8px"></i>
-  <i class="petal" style="left:68%;animation-duration:31s;animation-delay:14s;width:13px;height:11px"></i>
-  <i class="petal" style="left:78%;animation-duration:26s;animation-delay:5s;width:10px;height:9px"></i>
-  <i class="petal" style="left:88%;animation-duration:29s;animation-delay:9s;width:8px;height:7px"></i>
-  <i class="petal" style="left:95%;animation-duration:21s;animation-delay:0s;width:11px;height:9px"></i>
-  
-  <i class="petal" style="left:12%;animation-duration:32s;animation-delay:15s;width:10px;height:8px"></i>
-  <i class="petal" style="left:35%;animation-duration:27s;animation-delay:18s;width:12px;height:10px"></i>
-  <i class="petal" style="left:50%;animation-duration:30s;animation-delay:7s;width:9px;height:8px"></i>
-  <i class="petal" style="left:63%;animation-duration:24s;animation-delay:22s;width:11px;height:9px"></i>
-  <i class="petal" style="left:82%;animation-duration:33s;animation-delay:12s;width:13px;height:11px"></i>
+  <div style="z-index: 3; position:absolute; inset:0; pointer-events: none; overflow:hidden;">
+      <!-- Dense Falling Petals (Romantic Sakura Fubuki) -->
+      <i class="petal" style="left:5%;animation-duration:22s;animation-delay:0s;width:12px;height:10px"></i>
+      <i class="petal" style="left:15%;animation-duration:28s;animation-delay:8s;width:8px;height:7px"></i>
+      <i class="petal" style="left:28%;animation-duration:25s;animation-delay:3s;width:10px;height:9px"></i>
+      <i class="petal" style="left:42%;animation-duration:34s;animation-delay:11s;width:11px;height:9px"></i>
+      <i class="petal" style="left:56%;animation-duration:23s;animation-delay:1s;width:9px;height:8px"></i>
+      <i class="petal" style="left:68%;animation-duration:31s;animation-delay:14s;width:13px;height:11px"></i>
+      <i class="petal" style="left:78%;animation-duration:26s;animation-delay:5s;width:10px;height:9px"></i>
+      <i class="petal" style="left:88%;animation-duration:29s;animation-delay:9s;width:8px;height:7px"></i>
+      <i class="petal" style="left:95%;animation-duration:21s;animation-delay:0s;width:11px;height:9px"></i>
+      <i class="petal" style="left:12%;animation-duration:32s;animation-delay:15s;width:10px;height:8px"></i>
+      <i class="petal" style="left:35%;animation-duration:27s;animation-delay:18s;width:12px;height:10px"></i>
+      <i class="petal" style="left:50%;animation-duration:30s;animation-delay:7s;width:9px;height:8px"></i>
+      <i class="petal" style="left:63%;animation-duration:24s;animation-delay:22s;width:11px;height:9px"></i>
+      <i class="petal" style="left:82%;animation-duration:33s;animation-delay:12s;width:13px;height:11px"></i>
+  </div>
 </div>
-
-<div id="shiori-ribbon" aria-hidden="true">栞・漫画変換</div>
+<div id="shiori-ribbon"
+ aria-hidden="true">栞・漫画変換</div>
 
 <div class="wrap">
   <header>
