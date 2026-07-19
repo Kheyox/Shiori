@@ -89,9 +89,18 @@
 
   /* Décor de fond (Fuji + sakura) — discret, jamais interactif. */
   #bg-decor{position:fixed;inset:0;pointer-events:none;z-index:-1;overflow:hidden}
-  #bg-fuji{position:absolute;bottom:0;left:0;width:100%;height:100%;overflow:visible}
+  #bg-fuji{position:absolute;top:min(18vh,180px);left:50%;transform:translateX(-50%);width:100%;max-width:1200px;height:480px;overflow:visible}
   #bg-branch{position:absolute;top:-8px;right:-14px;width:min(440px,55vw);filter:drop-shadow(0px 4px 15px rgba(0,0,0,0.35))}
   #bg-branch-left{position:absolute;bottom:-15px;left:-15px;width:min(380px,48vw);filter:drop-shadow(0px 4px 15px rgba(0,0,0,0.35))}
+  
+  /* Animations de la brume */
+  .mist-line{animation:mist-drift 24s ease-in-out infinite alternate;}
+  .mist-line:nth-child(even){animation-duration:32s;animation-delay:-8s;}
+  @keyframes mist-drift{
+    0%{transform:translateX(-22px) scaleX(0.95);opacity:0.75;}
+    100%{transform:translateX(22px) scaleX(1.05);opacity:0.95;}
+  }
+
   .petal{position:absolute;top:0;display:block;width:10px;height:8px;background:#c97f88;
     border-radius:80% 0 55% 55% / 55% 0 80% 45%;opacity:0;
     animation-name:petal-fall;animation-timing-function:linear;animation-iteration-count:infinite}
@@ -267,22 +276,22 @@
     </defs>
 
     <!-- Glowing Sunset Sky Halo (centered behind the mountain peak) -->
-    <circle cx="600" cy="260" r="300" fill="url(#sun-glow)"/>
+    <circle cx="600" cy="210" r="300" fill="url(#sun-glow)"/>
 
-    <!-- Mount Fuji Body (Symmetrical volcanic cone - centered at x=600, peak at y=200) -->
-    <path fill="#20182b" d="M 120,480 C 350,440 450,290 535,200 Q 600,208 665,200 C 750,290 850,440 1080,480 Z"/>
+    <!-- Mount Fuji Body (Symmetrical volcanic cone - centered at x=600, peak at y=150) -->
+    <path fill="#20182b" d="M 120,480 C 350,440 450,290 535,150 Q 600,158 665,150 C 750,290 850,440 1080,480 Z"/>
 
     <!-- Snow Cap (Beautiful smooth Hokusai-style snow cap) -->
-    <path fill="#f4effa" d="M 480,278 C 502,246 520,222 535,200 Q 600,208 665,200 C 680,222 698,246 720,278 Q 675,260 635,290 Q 610,250 595,295 Q 580,250 565,290 Q 535,260 480,278 Z"/>
+    <path fill="#f4effa" d="M 480,228 C 502,196 520,172 535,150 Q 600,158 665,150 C 680,172 698,196 720,228 Q 675,210 635,240 Q 610,200 595,245 Q 580,200 565,240 Q 535,210 480,228 Z"/>
 
     <!-- Mountain Base Mist Layers (Layered fog from the photo) -->
     <path fill="#543c66" opacity="0.35" d="M0,480 L0,390 Q350,330 600,380 T1200,370 L1200,480 Z"/>
     <path fill="#77558f" opacity="0.2" d="M0,480 L0,410 Q400,350 800,400 T1200,390 L1200,480 Z"/>
 
-    <!-- Soft Mist Lines (fading horizontal layers) -->
-    <rect x="50" y="340" width="380" height="6" rx="3" fill="url(#mist-grad)"/>
-    <rect x="770" y="320" width="380" height="5" rx="2.5" fill="url(#mist-grad)"/>
-    <rect x="250" y="420" width="700" height="8" rx="4" fill="url(#mist-grad)"/>
+    <!-- Soft Mist Lines (fading horizontal layers with drift animations) -->
+    <rect class="mist-line" x="50" y="300" width="380" height="6" rx="3" fill="url(#mist-grad)"/>
+    <rect class="mist-line" x="770" y="280" width="380" height="5" rx="2.5" fill="url(#mist-grad)"/>
+    <rect class="mist-line" x="250" y="390" width="700" height="8" rx="4" fill="url(#mist-grad)"/>
   </svg>
   <svg id="bg-branch" viewBox="0 0 420 300">
     <g fill="none" stroke="#3a2f27" stroke-width="7" stroke-linecap="round">
