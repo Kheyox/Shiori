@@ -2241,7 +2241,7 @@ function recordHistory(names,pages,dest){
   const h=loadHistory();
   h.unshift({ id:Date.now().toString(36)+"-"+Math.random().toString(36).slice(2,7),
     date:new Date().toISOString(), device:deviceName(), dest:dest||"téléchargement",
-    tomes:names, pages });
+    tomes:names, pages, settings:snapshotSettings() });
   saveHistory(h.slice(0,300));
 }
 async function ensureDriveAuth(){
@@ -2304,6 +2304,23 @@ function renderHistory(){
     row.querySelector("b").textContent=`${e.tomes.length} tome${e.tomes.length>1?"s":""}${e.pages?` · ${e.pages} pages`:""} → ${e.dest}`;
     row.querySelector("span").textContent=new Date(e.date).toLocaleString("fr-FR",{dateStyle:"short",timeStyle:"short"})+(e.device?` · ${e.device}`:"");
     row.querySelector(".hist-files").textContent=e.tomes.join(" · ");
+    if(e.settings){
+      const btn=document.createElement("button");
+      btn.className="ra-btn";
+      btn.style.cssText="margin-top:9px;font-size:12px;padding:5px 12px;background:var(--surface-2);color:var(--text);border:1px solid var(--border)";
+      btn.textContent="↩ Réappliquer ces réglages";
+      btn.title="Restaure le profil, l'appareil, le gamma, la qualité et toutes les options utilisés lors de cette conversion";
+      btn.onmouseenter=()=>btn.style.borderColor="var(--ink)";
+      btn.onmouseleave=()=>btn.style.borderColor="var(--border)";
+      btn.onclick=()=>{
+        applySettingsObj(e.settings);
+        syncUI();
+        saveSettings();
+        histOverlay.classList.add("hidden");
+        btn.textContent="✓ Réglages appliqués";
+      };
+      row.appendChild(btn);
+    }
     list.appendChild(row);
   }
 }
