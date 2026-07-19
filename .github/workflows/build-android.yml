@@ -77,6 +77,9 @@ jobs:
           BUBBLEWRAP_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           BUBBLEWRAP_KEY_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
         run: |
+          # Le runner définit ANDROID_SDK_ROOT (SDK préinstallé) qui entre en
+          # conflit avec le SDK que Bubblewrap installe : on efface les deux.
+          unset ANDROID_SDK_ROOT ANDROID_HOME ANDROID_NDK_ROOT ANDROID_NDK_HOME || true
           # versionCode croissant à chaque build (requis pour mettre à jour l'app)
           jq ".appVersionCode = ${{ github.run_number }} | .appVersion = \"1.1.${{ github.run_number }}\" | .appVersionName = \"1.1.${{ github.run_number }}\"" \
             twa-manifest.json > twa-manifest.tmp && mv twa-manifest.tmp twa-manifest.json
