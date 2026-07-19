@@ -70,10 +70,26 @@
   .drop *{position:relative;z-index:2;}
   .drop.busy{border-color:var(--ink);pointer-events:none;animation:pulse 1.2s ease-in-out infinite}
   @keyframes pulse{0%,100%{opacity:1}50%{opacity:.55}}
+
+  /* Ruban marque-page (Shiori) */
+  #shiori-ribbon{position:fixed;top:0;left:45px;width:29px;background:var(--ink);color:var(--paper);
+    padding:18px 0 12px;font-family:"Hiragino Mincho ProN","Yu Mincho",serif;font-size:12px;font-weight:800;
+    text-align:center;writing-mode:vertical-rl;text-orientation:upright;border-bottom-left-radius:3px;
+    border-bottom-right-radius:3px;box-shadow:3px 3px 0px rgba(0,0,0,0.3);border:1.5px solid var(--ink-deep);
+    z-index:99;letter-spacing:5px;}
+  #shiori-ribbon::after{content:"";position:absolute;bottom:-10px;left:-1.5px;width:0;height:0;
+    border-left:14px solid transparent;border-right:14px solid transparent;border-top:10px solid var(--ink);}
+
+  /* SFX Manga dans la zone de dépôt */
+  .manga-sfx{position:absolute;bottom:8px;right:15px;font-size:72px;font-family:"Impact","Arial Black",sans-serif;
+    font-weight:900;color:transparent;-webkit-text-stroke:1.5px var(--border);opacity:0.18;user-select:none;
+    font-style:italic;transform:rotate(-10deg);transition:opacity .2s, -webkit-text-stroke .2s;z-index:1!important;}
+  .drop:hover .manga-sfx{opacity:0.42;-webkit-text-stroke:1.5px var(--ink);}
+
   /* Décor de fond (Fuji + sakura) — discret, jamais interactif. */
   #bg-decor{position:fixed;inset:0;pointer-events:none;z-index:-1;overflow:hidden}
   #bg-fuji{position:absolute;bottom:0;left:0;width:100%;height:100%;overflow:visible}
-  #bg-branch{position:absolute;top:-8px;right:-14px;width:min(400px,52vw)}
+  #bg-branch{position:absolute;top:-8px;right:-14px;width:min(440px,55vw);filter:drop-shadow(0px 4px 15px rgba(0,0,0,0.35))}
   .petal{position:absolute;top:0;display:block;width:10px;height:8px;background:#c97f88;
     border-radius:80% 0 55% 55% / 55% 0 80% 45%;opacity:0;
     animation-name:petal-fall;animation-timing-function:linear;animation-iteration-count:infinite}
@@ -294,6 +310,9 @@
   <i class="petal" style="left:84%;animation-duration:27s;animation-delay:6s;width:9px;height:7px"></i>
   <i class="petal" style="left:93%;animation-duration:22s;animation-delay:1s"></i>
 </div>
+
+<div id="shiori-ribbon" aria-hidden="true">栞・漫画変換</div>
+
 <div class="wrap">
   <header>
     <div class="logo"><span class="jp">栞</span>Shiori</div>
@@ -345,6 +364,7 @@
   <p class="lede">Tout se passe dans ton navigateur — rien n'est envoyé sur internet. Fonctionne identique sur Windows, Chromebook et Android. Dépose tes mangas, ajuste, récupère un CBZ optimisé pour l'e-ink.</p>
 
   <div class="drop" id="drop">
+    <div class="manga-sfx" aria-hidden="true">ドンッ</div>
     <span class="ic">本</span>
     <h2>Dépose tes fichiers ici</h2>
     <p>ou clique pour parcourir</p>
