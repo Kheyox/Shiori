@@ -9,6 +9,7 @@ on:
     tags: ['v*']
     branches: [main]
     paths:
+      - 'kobo-converter.html'
       - 'src-tauri/**'
       - '.github/workflows/build-windows.yml'
 
