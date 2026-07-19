@@ -1,10 +1,14 @@
 [
   {
-    "relation": ["delegate_permission/common.handle_all_urls"],
+    "relation": [
+      "delegate_permission/common.handle_all_urls"
+    ],
     "target": {
       "namespace": "android_app",
       "package_name": "app.web.shiori_5be31.twa",
-      "sha256_cert_fingerprints": ["REMPLACER_PAR_L_EMPREINTE_SHA256_DE_SIGNATURE"]
+      "sha256_cert_fingerprints": [
+        "66:3F:EB:30:0C:AF:FD:B1:0E:83:BA:03:A1:A1:DE:D3:1A:97:09:46:72:E3:69:03:9A:89:11:6B:74:41:9E:D0"
+      ]
     }
   }
 ]
