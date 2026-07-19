@@ -20,24 +20,24 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <style>
   :root{
-    --bg:#1a1714;
-    --surface:#221d17;
-    --surface-2:#2b2419;
-    --border:#3a342b;
-    --paper:#f3ede1;
-    --ink:#e0533d;        /* hanko / cover red */
-    --ink-deep:#c4422e;
-    --text:#ece4d6;
-    --muted:#a89d8c;
-    --muted-2:#7d7261;
-    --ok:#7fae6e;
-    --radius:14px;
+    --bg:#120e1e;
+    --surface:rgba(29, 21, 38, 0.76);
+    --surface-2:rgba(49, 31, 61, 0.83);
+    --border:rgba(143, 77, 109, 0.28);
+    --paper:#f5f1fa;
+    --ink:#d94b76;        /* cherry pink */
+    --ink-deep:#b33055;
+    --text:#f5effa;
+    --muted:#ab9eb5;
+    --muted-2:#7d6f88;
+    --ok:#85c278;
+    --radius:16px;
   }
   *{box-sizing:border-box}
-  html{margin:0;background:radial-gradient(circle at 62% 80%, #2f251c 0%, #1a1714 100%);color:var(--text);
+  html{margin:0;background:linear-gradient(135deg, #110d1c 0%, #20142b 45%, #3c1e3b 80%, #572942 100%);color:var(--text);
     font-family:"Inter",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,system-ui,sans-serif;
     -webkit-font-smoothing:antialiased;}
-  html::before{content:"";position:fixed;inset:0;background-image:radial-gradient(rgba(224, 83, 61, 0.04) 1.5px, transparent 0);
+  html::before{content:"";position:fixed;inset:0;background-image:radial-gradient(rgba(217, 75, 118, 0.05) 1.5px, transparent 0);
     background-size:16px 16px;pointer-events:none;z-index:-2;}
   body{min-height:100vh;padding:24px 18px 56px;line-height:1.5;background:transparent}
   .wrap{max-width:980px;margin:0 auto}
@@ -63,8 +63,9 @@
   /* Drop zone */
   .drop{border:2px dashed var(--border);border-radius:var(--radius);
     padding:42px 24px;text-align:center;cursor:pointer;transition:.2s;
-    background:var(--surface);position:relative;box-shadow:6px 6px 0px rgba(0,0,0,0.35);overflow:hidden;}
-  .drop:hover,.drop.hot{border-color:var(--ink);background:var(--surface-2);border-style:solid;box-shadow:6px 6px 0px var(--ink-deep);}
+    background:var(--surface);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
+    position:relative;box-shadow:0 12px 30px rgba(0,0,0,0.4), 6px 6px 0px rgba(110, 50, 90, 0.35);overflow:hidden;}
+  .drop:hover,.drop.hot{border-color:var(--ink);background:var(--surface-2);border-style:solid;box-shadow:0 12px 30px rgba(0,0,0,0.4), 6px 6px 0px var(--ink-deep);}
   .drop:hover::after,.drop.hot::after{content:"";position:absolute;inset:0;background-image:radial-gradient(var(--border) 1.5px, transparent 0);
     background-size:10px 10px;opacity:0.15;pointer-events:none;z-index:1;}
   .drop *{position:relative;z-index:2;}
@@ -90,6 +91,7 @@
   #bg-decor{position:fixed;inset:0;pointer-events:none;z-index:-1;overflow:hidden}
   #bg-fuji{position:absolute;bottom:0;left:0;width:100%;height:100%;overflow:visible}
   #bg-branch{position:absolute;top:-8px;right:-14px;width:min(440px,55vw);filter:drop-shadow(0px 4px 15px rgba(0,0,0,0.35))}
+  #bg-branch-left{position:absolute;bottom:-15px;left:-15px;width:min(380px,48vw);filter:drop-shadow(0px 4px 15px rgba(0,0,0,0.35))}
   .petal{position:absolute;top:0;display:block;width:10px;height:8px;background:#c97f88;
     border-radius:80% 0 55% 55% / 55% 0 80% 45%;opacity:0;
     animation-name:petal-fall;animation-timing-function:linear;animation-iteration-count:infinite}
@@ -247,38 +249,37 @@
 <div id="bg-decor" aria-hidden="true">
   <svg id="bg-fuji" viewBox="0 0 1200 480" preserveAspectRatio="xMidYMax slice">
     <defs>
-      <!-- Sun Glow -->
+      <!-- Sunset Glow (Warm gold to pink, matching photo) -->
       <radialGradient id="sun-glow" cx="50%" cy="50%" r="50%">
-        <stop offset="0%" stop-color="var(--ink)" stop-opacity="0.65"/>
-        <stop offset="40%" stop-color="var(--ink)" stop-opacity="0.3"/>
-        <stop offset="70%" stop-color="var(--ink)" stop-opacity="0.08"/>
-        <stop offset="100%" stop-color="var(--ink)" stop-opacity="0"/>
+        <stop offset="0%" stop-color="#ffd5b8" stop-opacity="0.8"/>
+        <stop offset="25%" stop-color="#e25d80" stop-opacity="0.55"/>
+        <stop offset="60%" stop-color="#4e214d" stop-opacity="0.2"/>
+        <stop offset="100%" stop-color="#120e1e" stop-opacity="0"/>
       </radialGradient>
-      <!-- Mist Gradient -->
+      <!-- Mist Gradient (Soft lavender fog) -->
       <linearGradient id="mist-grad" x1="0%" y1="0%" x2="100%" y2="0%">
         <stop offset="0%" stop-color="var(--paper)" stop-opacity="0"/>
-        <stop offset="25%" stop-color="var(--paper)" stop-opacity="0.12"/>
-        <stop offset="50%" stop-color="var(--paper)" stop-opacity="0.25"/>
-        <stop offset="75%" stop-color="var(--paper)" stop-opacity="0.12"/>
+        <stop offset="25%" stop-color="var(--paper)" stop-opacity="0.08"/>
+        <stop offset="50%" stop-color="var(--paper)" stop-opacity="0.2"/>
+        <stop offset="75%" stop-color="var(--paper)" stop-opacity="0.08"/>
         <stop offset="100%" stop-color="var(--paper)" stop-opacity="0"/>
       </linearGradient>
     </defs>
 
-    <!-- Sun Halo -->
-    <circle cx="600" cy="240" r="220" fill="url(#sun-glow)"/>
-    <!-- Sun (Perfect Circle, aligned with peak) -->
-    <circle cx="600" cy="240" r="95" fill="var(--ink)" opacity="0.75"/>
+    <!-- Glowing Sunset Sky Halo (placed to the right as in the photo) -->
+    <circle cx="820" cy="220" r="320" fill="url(#sun-glow)"/>
 
-    <!-- Background Hills (very soft silhouette) -->
-    <path fill="#1a1714" d="M0,480 L0,430 Q350,390 600,435 T1200,420 L1200,480 Z" opacity="0.8"/>
+    <!-- Mountain Base Mist Layers (Layered fog from the photo) -->
+    <path fill="#543c66" opacity="0.3" d="M0,480 L0,400 Q350,340 600,390 T1200,380 L1200,480 Z"/>
+    <path fill="#77558f" opacity="0.18" d="M0,480 L0,420 Q400,360 800,410 T1200,400 L1200,480 Z"/>
 
-    <!-- Mount Fuji Body (Classic symmetrical volcanic cone) -->
-    <path fill="#241e1a" d="M 120,480 C 380,440 480,290 555,150 L 575,155 L 600,147 L 625,155 L 645,150 C 720,290 820,440 1080,480 Z"/>
+    <!-- Mount Fuji Body (Classic symmetrical volcanic cone - deep violet-indigo) -->
+    <path fill="#20182b" d="M 120,480 C 380,440 480,290 555,150 L 575,155 L 600,147 L 625,155 L 645,150 C 720,290 820,440 1080,480 Z"/>
 
-    <!-- Snow Cap (Beautiful Hokusai-style snow claws) -->
-    <path fill="#f3ede1" d="M 515,228 C 532,196 544,172 555,150 L 575,155 L 600,147 L 625,155 L 645,150 C 656,172 668,196 685,228 C 655,250 645,220 630,242 C 620,230 610,260 600,235 C 590,260 580,230 570,242 C 555,220 545,250 515,228 Z"/>
+    <!-- Snow Cap (Beautiful Hokusai-style snow claws - bright soft cream-lavender) -->
+    <path fill="#f4effa" d="M 515,228 C 532,196 544,172 555,150 L 575,155 L 600,147 L 625,155 L 645,150 C 656,172 668,196 685,228 C 655,250 645,220 630,242 C 620,230 610,260 600,235 C 590,260 580,230 570,242 C 555,220 545,250 515,228 Z"/>
 
-    <!-- Soft Mist Lines (replaces gray pills) -->
+    <!-- Soft Mist Lines (fading horizontal layers) -->
     <rect x="50" y="320" width="450" height="7" rx="3.5" fill="url(#mist-grad)"/>
     <rect x="720" y="280" width="430" height="5" rx="2.5" fill="url(#mist-grad)"/>
     <rect x="350" y="400" width="600" height="9" rx="4.5" fill="url(#mist-grad)"/>
@@ -301,6 +302,21 @@
     <g fill="#e0533d" opacity=".5">
       <circle cx="250" cy="110" r="2.5"/><circle cx="279" cy="166" r="2.2"/><circle cx="226" cy="140" r="1.8"/>
       <circle cx="320" cy="64" r="2"/><circle cx="360" cy="50" r="1.6"/>
+    </g>
+  </svg>
+  <svg id="bg-branch-left" viewBox="0 0 420 300">
+    <g fill="none" stroke="#3a2f27" stroke-width="7" stroke-linecap="round">
+      <path d="M-10,250 C70,220 120,180 180,140"/>
+      <path d="M100,190 C120,160 130,130 140,90" stroke-width="5"/>
+      <path d="M60,205 C80,185 95,170 102,150" stroke-width="4"/>
+    </g>
+    <g fill="#d98a92" opacity=".75">
+      <g transform="translate(180,140)"><circle r="7"/><circle cx="11" cy="-5" r="7"/><circle cx="8" cy="9" r="7"/><circle cx="-8" cy="9" r="7"/><circle cx="-11" cy="-5" r="7"/></g>
+      <g transform="translate(140,90) scale(.85)"><circle r="7"/><circle cx="11" cy="-5" r="7"/><circle cx="8" cy="9" r="7"/><circle cx="-8" cy="9" r="7"/><circle cx="-11" cy="-5" r="7"/></g>
+      <g transform="translate(110,170) scale(.85)"><circle r="7"/><circle cx="11" cy="-5" r="7"/><circle cx="8" cy="9" r="7"/><circle cx="-8" cy="9" r="7"/><circle cx="-11" cy="-5" r="7"/></g>
+    </g>
+    <g fill="#f5f1fa" opacity="0.9">
+      <circle cx="180" cy="140" r="2.5"/><circle cx="140" cy="90" r="2.2"/><circle cx="110" cy="170" r="2.2"/>
     </g>
   </svg>
   <i class="petal" style="left:12%;animation-duration:26s;animation-delay:0s"></i>
