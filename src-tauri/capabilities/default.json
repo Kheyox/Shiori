@@ -3,5 +3,5 @@
   "identifier": "default",
   "description": "Fenêtre principale : API de base + ouverture de liens dans le navigateur",
   "windows": ["main"],
-  "permissions": ["core:default", "opener:default"]
+  "permissions": ["core:default", "opener:default", "updater:default", "process:default"]
 }
