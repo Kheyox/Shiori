@@ -1067,46 +1067,100 @@ function buildProcessor(makeCanvas, toBlob){
     return cv;
   }
 
-  // Webtoon : une bande verticale (hauteur >> largeur) est découpée en pages à
-  // la taille de l'écran, en plaçant chaque coupe sur la ligne la plus « vide »
-  // autour de la position idéale (pour ne pas couper une case ou une bulle).
+  // Webtoon : une bande verticale (hauteur >> largeur) est retaillée en pages
+  // pleines : on détecte les BLOCS de contenu (lignes non uniformes), on
+  // supprime les grands vides entre scènes, puis on ré-empile les blocs dans
+  // des pages à la taille de l'écran ; un bloc trop haut est coupé sur sa
+  // ligne la plus « vide ». Gère fonds clairs ET sombres.
   function splitStrip(bmp,o){
-    const sliceH=Math.max(1,Math.round(bmp.width*o.th/o.tw));
-    const PW=24, PH=Math.min(4096,bmp.height);
+    // remplit la largeur, mais sans agrandir plus de 2× (petites images = floues)
+    const s=Math.min(o.tw/bmp.width, 2);
+    const wD=Math.round(bmp.width*s), xD=Math.round((o.tw-wD)/2);
+    const pageH=Math.max(8,Math.round(o.th/s));    // hauteur d'une page, en px source
+    const PW=24, PH=Math.min(8192,bmp.height);
     const c=makeCanvas(PW,PH), cx=c.getContext("2d",{willReadFrequently:true});
     cx.drawImage(bmp,0,0,PW,PH);
     const d=cx.getImageData(0,0,PW,PH).data;
-    const ink=new Float32Array(PH);          // « encre » par ligne (0 = blanc)
-    for(let y=0;y<PH;y++){ let s=0;
-      for(let x=0;x<PW;x++){ const i=(y*PW+x)*4; s+=765-d[i]-d[i+1]-d[i+2]; }
-      ink[y]=s;
+    const uni=new Uint8Array(PH), lum=new Float32Array(PH);
+    for(let y=0;y<PH;y++){
+      let mn=255,mx=0,sum=0;
+      for(let x=0;x<PW;x++){ const i=(y*PW+x)*4;
+        const l=d[i]*0.299+d[i+1]*0.587+d[i+2]*0.114;
+        if(l<mn)mn=l; if(l>mx)mx=l; sum+=l; }
+      uni[y]=(mx-mn)<26?1:0; lum[y]=sum/PW;
     }
+    const toSrc=y=>Math.round(y*bmp.height/PH);
     const toProf=y=>Math.min(PH-1,Math.max(0,Math.round(y*PH/bmp.height)));
-    const oSlice=Object.assign({},o,{trim:false}); // pas de rognage par tranche
-    const out=[];
-    let y=0;
-    const stepSrc=Math.max(1,Math.round(bmp.height/PH));
-    while(y<bmp.height-2){
-      let end=y+sliceH;
-      if(end>=bmp.height-sliceH*0.3){ end=bmp.height; } // dernière tranche : tout prendre
-      else{
-        const win=Math.round(sliceH*0.18);
-        let best=end, bestInk=Infinity;
-        for(let yy=end-win; yy<=Math.min(bmp.height-1,end+win); yy+=stepSrc){
-          const v=ink[toProf(yy)];
-          if(v<bestInk){ bestInk=v; best=yy; }
-        }
-        end=best;
-      }
-      out.push(renderRegion(bmp,0,y,bmp.width,end-y,oSlice));
-      y=end;
+    // couleur de fond = luminance médiane des lignes uniformes (blanc OU noir)
+    const uLums=[]; for(let y=0;y<PH;y++) if(uni[y]) uLums.push(lum[y]);
+    uLums.sort((a,b)=>a-b);
+    const bgL=uLums.length?uLums[Math.floor(uLums.length/2)]:255;
+    const bg=bgL>128?"#ffffff":"#000000";
+    // blocs de contenu ; les blocs séparés par un petit vide sont fusionnés
+    const mergeGap=Math.max(2,Math.round(pageH*0.04*PH/bmp.height));
+    const blocks=[]; let y=0;
+    while(y<PH){
+      while(y<PH&&uni[y])y++;
+      if(y>=PH)break;
+      let e=y,gap=0;
+      while(e<PH){ if(uni[e]){ gap++; if(gap>mergeGap)break; } else gap=0; e++; }
+      blocks.push({a:y,b:e-gap}); y=e;
     }
-    return out;
+    if(!blocks.length) blocks.push({a:0,b:PH});
+    const pad=Math.max(1,Math.round(mergeGap/2));
+    const segs=blocks.map(bk=>({y0:toSrc(Math.max(0,bk.a-pad)), y1:toSrc(Math.min(PH,bk.b+pad))}))
+                     .filter(sg=>sg.y1-sg.y0>2);
+    // coupe les segments plus hauts qu'une page, sur la ligne la plus uniforme
+    const step=Math.max(1,Math.round(bmp.height/PH));
+    const pieces=[];
+    for(const sg of segs){
+      const H=sg.y1-sg.y0;
+      const k=Math.max(1,Math.ceil(H/pageH));   // découpe ÉQUILIBRÉE : k morceaux ~égaux
+      const target=H/k;
+      let a=sg.y0;
+      for(let i=1;i<k;i++){
+        const ideal=sg.y0+Math.round(target*i), win=Math.round(Math.min(target,pageH)*0.3);
+        let best=ideal, bestScore=-1;
+        for(let yy=Math.max(a+step,ideal-win); yy<=Math.min(sg.y1-step,ideal+win); yy+=step){
+          const p=toProf(yy);
+          const score=uni[p]?2:1/(1+Math.abs(lum[p]-bgL)/24);
+          if(score>=bestScore){ bestScore=score; best=yy; }
+        }
+        pieces.push({y0:a,y1:best}); a=best;
+      }
+      pieces.push({y0:a,y1:sg.y1});
+    }
+    // empaquette les morceaux en pages pleines (petit espace fixe entre blocs)
+    const gapDst=Math.round(o.th*0.02);
+    const pages=[]; let cur=[], used=0;
+    for(const pc of pieces){
+      const h=Math.round((pc.y1-pc.y0)*s);
+      if(cur.length && used+gapDst+h>o.th){ pages.push(cur); cur=[]; used=0; }
+      used+=(cur.length?gapDst:0)+h; cur.push(pc);
+    }
+    if(cur.length) pages.push(cur);
+    // rendu : composition directe à la taille cible + traitements image
+    const out=[];
+    for(const pg of pages){
+      const cv=makeCanvas(o.tw,o.th), ctx=cv.getContext("2d");
+      ctx.imageSmoothingQuality="high";
+      ctx.fillStyle=bg; ctx.fillRect(0,0,o.tw,o.th);
+      let yD=0;
+      for(const pc of pg){
+        const hD=Math.round((pc.y1-pc.y0)*s);
+        ctx.drawImage(bmp,0,pc.y0,bmp.width,pc.y1-pc.y0,xD,yD,wD,hD);
+        yD+=hD+gapDst;
+      }
+      applyPixelOps(ctx,o.tw,o.th,o);
+      if(o.sharpen) sharpen(ctx,o.tw,o.th);
+      out.push(cv);
+    }
+    return out.length?out:[renderRegion(bmp,0,0,bmp.width,bmp.height,o)];
   }
 
   // Renvoie 1..N canvases selon le mode double-page / webtoon
   function processBitmap(bmp,o){
-    if(o.webtoon && bmp.height>bmp.width*2.2) return splitStrip(bmp,o);
+    if(o.webtoon && bmp.height>bmp.width*2) return splitStrip(bmp,o);
     const isSpread=bmp.width>bmp.height*1.15;
     if(!isSpread || o.dblmode==="keep") return [renderRegion(bmp,0,0,bmp.width,bmp.height,o)];
     const cw=o.rotdir==="cw";
