@@ -1763,16 +1763,20 @@ async function runConvert(sink,append){
     src=null; partZips=null; // libère les archives sources
     stats.inBytes += job.file?job.file.size:(job.srcSize||job.pages.reduce((s,p)=>s+(p.blob?p.blob.size:0),0));
 
-    let outIdx=1, outCount=0;
-    for(const blobs of perPage) for(const b of blobs){
-      zip.file(String(outIdx).padStart(pad,"0")+".jpg", b); outIdx++; outCount++;
-    }
+    const allBlobs=[];
+    for(const blobs of perPage) for(const b of blobs) allBlobs.push(b);
+    const outCount=allBlobs.length;
 
     const meta=job.merged?{series:job.series,tome:null}:parseName(job.rawName||job.name);
-    zip.file("ComicInfo.xml", comicInfoXML({
-      title:base, series:meta.series, number:meta.tome, count:outCount, rtl:o.rtl,
-    }));
-    const cbz=await zip.generateAsync({type:"blob",compression:"STORE"});
+    const outZip = o.outformat==="kepub"
+      ? generateKepubPackage({title:base, series:meta.series, number:meta.tome, images:allBlobs, tw:o.tw, th:o.th, rtl:o.rtl})
+      : generateCbzPackage({title:base, series:meta.series, number:meta.tome, images:allBlobs, rtl:o.rtl});
+
+    const cbz=await outZip.generateAsync({
+      type:"blob",
+      compression:"STORE",
+      mimeType: o.outformat==="kepub" ? "application/epub+zip" : "application/x-cbz"
+    });
     stats.outBytes+=cbz.size;
     if(sink){
       // Écriture au fil de l'eau : on écrit le tome puis on libère le blob.
