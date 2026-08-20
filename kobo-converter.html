@@ -2430,27 +2430,28 @@ async function importFromDrive(){
     btn.textContent=old;
     const picked = await showDriveExplorer({ mode: "files", title: "Ouvrir des mangas depuis Google Drive" });
     if(!picked || !picked.length){ btn.disabled=false; return; }
-    let failed=0;
-    for(let i=0;i<picked.length;i++){
-      const f=picked[i];
-      importProgress(i+1,picked.length,f.name);
-      await new Promise(r=>setTimeout(r,0));
+    
+    let failed=0, done=0;
+    const CONC = Math.min(4, Math.max(2, navigator.hardwareConcurrency||3));
+    
+    await mapLimit(picked, CONC, async (f) => {
+      done++;
+      importProgress(done, picked.length, f.name);
       try{
         const blob=await driveDownload(f.id);
-        const file=new File([blob],f.name,{type:blob.type||""});
-        const {jobs,failed:ff}=await buildJobsFromFiles([file]);
+        const file=new File([blob], f.name, {type: blob.type||""});
+        const {jobs, failed:ff}=await buildJobsFromFiles([file]);
         failed+=ff;
         for(const j of jobs){
-          if(j.file && !j.rar && !j.pdfDoc){
-            j.driveId=f.id;
-            j.srcSize=f.sizeBytes?+f.sizeBytes:blob.size;
-            j.file=null;
-          }
+          // On garde le fichier déjà téléchargé en mémoire pour éviter un second téléchargement !
+          j.driveId=f.id;
+          j.srcSize=f.sizeBytes?+f.sizeBytes:blob.size;
           j.delEntries=[{driveId:f.id, name:f.name}];
           state.jobs.push(j);
         }
-      }catch(e){ failed++; console.error("drive import fail",f.name,e); }
-    }
+      }catch(e){ failed++; console.error("drive import fail", f.name, e); }
+    });
+
     importProgress(null);
     if(!state.jobs.length){ alert("Aucun fichier exploitable parmi la sélection."); btn.disabled=false; return; }
     if(failed) alert(failed+" fichier(s) illisibles ignorés.");
