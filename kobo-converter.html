@@ -1984,8 +1984,8 @@ function generateKepubPackage({title, series, number, images, tw, th, rtl}){
   </style>
 </head>
 <body>
-  <svg xmlns="http://www.w3.org/2000/svg" version="1.1" viewBox="0 0 ${tw} ${th}" width="100%" height="100%">
-    <image width="${tw}" height="${th}" href="../images/${imgName}"/>
+  <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" version="1.1" viewBox="0 0 ${tw} ${th}" width="100%" height="100%">
+    <image width="${tw}" height="${th}" xlink:href="../images/${imgName}" href="../images/${imgName}"/>
   </svg>
 </body>
 </html>`;
@@ -2220,12 +2220,14 @@ async function findOrCreateFolder(name){
 }
 
 async function uploadToDrive(name,blob,folderId){
-  const meta={name,parents:folderId?[folderId]:undefined};
-  const form=new FormData();
-  form.append("metadata",new Blob([JSON.stringify(meta)],{type:"application/json"}));
-  form.append("file",blob);
-  const r=await fetch("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart",{
-    method:"POST",headers:{Authorization:"Bearer "+driveToken},body:form});
+  const mimeType = name.endsWith(".epub") ? "application/epub+zip" : "application/x-cbz";
+  const meta = { name, mimeType, parents: folderId ? [folderId] : undefined };
+  const form = new FormData();
+  form.append("metadata", new Blob([JSON.stringify(meta)], {type: "application/json"}));
+  form.append("file", blob, name);
+  const r = await fetch("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart", {
+    method: "POST", headers: {Authorization: "Bearer "+driveToken}, body: form
+  });
   if(!r.ok) throw new Error("upload "+r.status);
   return r.json();
 }
