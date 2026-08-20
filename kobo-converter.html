@@ -2407,49 +2407,6 @@ async function importFromDrive(){
   }
   btn.textContent=old; btn.disabled=false;
 }
-  const btn=$("drive-import"), old=btn.textContent;
-  btn.disabled=true;
-  try{
-    btn.textContent="Connexion…";
-    if(!(await ensureDriveAuth())){ btn.textContent=old; btn.disabled=false; return; }
-    if(!ensureApiKeyPrompt("(nécessaire pour parcourir ton Drive)")){ btn.textContent=old; btn.disabled=false; return; }
-    await loadPicker();
-    btn.textContent=old;
-    const picked=(await pickDriveFiles()).filter(f=>DRIVE_IMPORT_RE.test(f.name));
-    if(!picked.length){ btn.disabled=false; return; }
-    let failed=0;
-    for(let i=0;i<picked.length;i++){
-      const f=picked[i];
-      importProgress(i+1,picked.length,f.name);
-      await new Promise(r=>setTimeout(r,0));
-      try{
-        const blob=await driveDownload(f.id);
-        const file=new File([blob],f.name,{type:blob.type||""});
-        const {jobs,failed:ff}=await buildJobsFromFiles([file]);
-        failed+=ff;
-        for(const j of jobs){
-          // zip/cbz/epub : on libère le contenu, re-téléchargé à la demande
-          if(j.file && !j.rar && !j.pdfDoc){
-            j.driveId=f.id;
-            j.srcSize=f.sizeBytes?+f.sizeBytes:blob.size;
-            j.file=null;
-          }
-          j.delEntries=[{driveId:f.id, name:f.name}];   // nettoyage → corbeille Drive
-          state.jobs.push(j);
-        }
-      }catch(e){ failed++; console.error("drive import fail",f.name,e); }
-    }
-    importProgress(null);
-    if(!state.jobs.length){ alert("Aucun fichier exploitable parmi la sélection."); btn.disabled=false; return; }
-    if(failed) alert(failed+" fichier(s) illisibles ignorés.");
-    buildPreviewIndex();
-    enterWorkspace();
-  }catch(e){
-    importProgress(null);
-    alert("Import Drive : "+e.message);
-  }
-  btn.textContent=old; btn.disabled=false;
-}
 
 // Connexion Drive complète : config (ID client / clé API, demandés une fois),
 // jeton, puis choix du dossier (sélecteur visuel, ou « Shiori » auto sans clé).
