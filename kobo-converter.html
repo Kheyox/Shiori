@@ -2191,6 +2191,19 @@ async function driveDownload(id, retried){
   return r.blob();
 }
 
+async function uploadToDrive(name, blob, folderId){
+  const mimeType = name.endsWith(".epub") ? "application/epub+zip" : "application/x-cbz";
+  const meta = { name, mimeType, parents: folderId ? [folderId] : undefined };
+  const form = new FormData();
+  form.append("metadata", new Blob([JSON.stringify(meta)], {type: "application/json"}));
+  form.append("file", blob, name);
+  const r = await fetch("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart", {
+    method: "POST", headers: {Authorization: "Bearer " + driveToken}, body: form
+  });
+  if(!r.ok) throw new Error("upload " + r.status);
+  return r.json();
+}
+
 async function ensureDriveAuth(){
   if(!driveClientId()){
     const cid=(prompt("Connexion Google Drive — colle ton ID CLIENT OAuth\n(celui qui finit par « .apps.googleusercontent.com », ligne « Shiori Web »).\n\nMémorisé dans ce navigateur.")||"").trim();
