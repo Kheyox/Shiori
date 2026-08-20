@@ -2207,6 +2207,8 @@ async function findOrCreateFolder(name){
   return (await c.json()).id;
 }
 
+const DRIVE_IMPORT_RE = /\.(cbz|zip|cbr|rar|pdf|epub|kepub|jpe?g|png|webp|gif|bmp)$/i;
+
 // Navigateur Google Drive natif Shiori (100% OAuth, 0 clé API nécessaire)
 async function listDriveItems(parentId = "root"){
   const q = `'${parentId}' in parents and trashed = false`;
