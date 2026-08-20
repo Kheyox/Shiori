@@ -2167,132 +2167,246 @@ function ensureDriveClient(){
   return true;
 }
 
-// Charge l'API Google Picker (api.js + module "picker") une seule fois.
-let pickerLoaded=null;
-function loadPicker(){
-  if(pickerLoaded) return pickerLoaded;
-  pickerLoaded=new Promise((resolve,reject)=>{
-    const s=document.createElement("script");
-    s.src="https://apis.google.com/js/api.js";
-    s.onload=()=>gapi.load("picker",{callback:resolve,onerror:()=>reject(new Error("picker"))});
-    s.onerror=()=>reject(new Error("api.js"));
-    document.head.appendChild(s);
+// Navigateur Google Drive natif Shiori (100% OAuth, 0 clé API nécessaire)
+async function listDriveItems(parentId = "root"){
+  const q = `'${parentId}' in parents and trashed = false`;
+  const fields = "files(id, name, mimeType, size)";
+  const r = await fetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=${encodeURIComponent(fields)}&orderBy=folder,name&pageSize=1000`, {
+    headers: { Authorization: "Bearer " + driveToken }
   });
-  return pickerLoaded;
+  const data = await r.json();
+  return data.files || [];
 }
 
-// Ouvre le sélecteur de dossier Drive. Résout {id,name}, ou null si annulé.
-function pickFolder(){
-  return new Promise((resolve,reject)=>{
-    const key=driveApiKey();
-    if(!key) return reject(new Error("apikey"));
-    const view=new google.picker.DocsView(google.picker.ViewId.FOLDERS)
-      .setSelectFolderEnabled(true)
-      .setMimeTypes("application/vnd.google-apps.folder");
-    const picker=new google.picker.PickerBuilder()
-      .setOAuthToken(driveToken)
-      .setDeveloperKey(key)
-      .setTitle("Choisis le dossier de destination")
-      .addView(view)
-      .setCallback((data)=>{
-        const action=data[google.picker.Response.ACTION];
-        if(action===google.picker.Action.PICKED){
-          const doc=data[google.picker.Response.DOCUMENTS][0];
-          resolve({id:doc[google.picker.Document.ID], name:doc[google.picker.Document.NAME]});
-        }else if(action===google.picker.Action.CANCEL){
-          resolve(null);
+function showDriveExplorer({ mode = "files", title = "Google Drive" } = {}){
+  return new Promise(async (resolve) => {
+    let currentFolder = { id: "root", name: "Mon Drive" };
+    const history = [currentFolder];
+    let selectedFiles = new Map();
+
+    const overlay = document.createElement("div");
+    overlay.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:99999;display:flex;align-items:center;justify-content:center;padding:16px;backdrop-filter:blur(6px);animation:fadeIn .2s ease;";
+
+    const modal = document.createElement("div");
+    modal.style.cssText = "background:#18131e;border:1px solid #3c324a;border-radius:14px;width:100%;max-width:620px;max-height:85vh;display:flex;flex-direction:column;box-shadow:0 24px 60px rgba(0,0,0,0.8);color:#f0eef5;overflow:hidden;font-family:inherit;";
+
+    modal.innerHTML = `
+      <div style="padding:16px 20px;border-bottom:1px solid #2e263a;display:flex;align-items:center;justify-content:space-between;gap:12px;background:#1e1826;">
+        <div style="font-weight:600;font-size:15px;display:flex;align-items:center;gap:8px;">
+          <span>${mode === "folder" ? "📁" : "📂"}</span>
+          <span>${title}</span>
+        </div>
+        <button id="dr-close" style="background:transparent;border:none;color:#9b8ea9;font-size:20px;cursor:pointer;line-height:1;padding:4px 8px;border-radius:6px;">✕</button>
+      </div>
+      <div id="dr-crumbs" style="padding:10px 20px;background:#141019;border-bottom:1px solid #241d2e;font-size:12px;display:flex;align-items:center;gap:6px;overflow-x:auto;white-space:nowrap;color:#bcaec9;"></div>
+      <div id="dr-toolbar" style="padding:8px 20px;background:#18131e;border-bottom:1px solid #241d2e;display:flex;align-items:center;justify-content:space-between;font-size:12px;">
+        <span id="dr-status" style="color:#8a7c9d;">Chargement…</span>
+        <div id="dr-select-tools" style="display:none;gap:10px;">
+          <a href="#" id="dr-sel-all" style="color:#ff6584;text-decoration:none;">Tout cocher</a>
+          <a href="#" id="dr-sel-none" style="color:#8a7c9d;text-decoration:none;">Tout décocher</a>
+        </div>
+      </div>
+      <div id="dr-list" style="flex:1;overflow-y:auto;padding:8px 0;min-height:260px;max-height:420px;"></div>
+      <div style="padding:14px 20px;border-top:1px solid #2e263a;background:#1e1826;display:flex;align-items:center;justify-content:flex-end;gap:12px;">
+        <button id="dr-cancel" style="background:transparent;border:1px solid #3c324a;color:#bcaec9;padding:8px 16px;border-radius:8px;cursor:pointer;font-size:13px;">Annuler</button>
+        <button id="dr-confirm" style="background:#ff6584;border:none;color:#fff;font-weight:600;padding:8px 20px;border-radius:8px;cursor:pointer;font-size:13px;box-shadow:0 4px 12px rgba(255,101,132,0.3);"></button>
+      </div>
+    `;
+
+    overlay.appendChild(modal);
+    document.body.appendChild(overlay);
+
+    const crumbsEl = modal.querySelector("#dr-crumbs");
+    const listEl = modal.querySelector("#dr-list");
+    const statusEl = modal.querySelector("#dr-status");
+    const toolsEl = modal.querySelector("#dr-select-tools");
+    const confirmBtn = modal.querySelector("#dr-confirm");
+
+    function renderCrumbs(){
+      crumbsEl.innerHTML = "";
+      history.forEach((f, idx) => {
+        if(idx > 0){
+          const sep = document.createElement("span");
+          sep.textContent = "›";
+          sep.style.color = "#5a4f6a";
+          crumbsEl.appendChild(sep);
         }
-      })
-      .build();
-    picker.setVisible(true);
-  });
-}
+        const a = document.createElement("a");
+        a.textContent = f.name;
+        a.href = "#";
+        a.style.cssText = "color:" + (idx === history.length - 1 ? "#fff" : "#ff6584") + ";text-decoration:none;font-weight:" + (idx === history.length - 1 ? "600" : "400");
+        a.onclick = (e) => {
+          e.preventDefault();
+          if(idx !== history.length - 1){
+            history.splice(idx + 1);
+            currentFolder = f;
+            loadFolder(currentFolder.id);
+          }
+        };
+        crumbsEl.appendChild(a);
+      });
+    }
 
-function getDriveToken(){
-  return new Promise((resolve,reject)=>{
-    if(!ensureDriveClient()) return reject(new Error("client"));
-    driveTokenClient.callback=(resp)=>{
-      if(resp && resp.access_token){ driveToken=resp.access_token; resolve(driveToken); }
-      else reject(new Error("auth"));
+    function updateConfirmBtn(){
+      if(mode === "folder"){
+        confirmBtn.textContent = `Sélectionner ce dossier (« ${currentFolder.name} »)`;
+        confirmBtn.disabled = false;
+      } else {
+        const count = selectedFiles.size;
+        confirmBtn.textContent = `Importer ${count} fichier${count > 1 ? "s" : ""}`;
+        confirmBtn.disabled = count === 0;
+        confirmBtn.style.opacity = count === 0 ? "0.5" : "1";
+      }
+    }
+
+    async function loadFolder(folderId){
+      listEl.innerHTML = "";
+      statusEl.textContent = "Chargement des dossiers et fichiers…";
+      renderCrumbs();
+      updateConfirmBtn();
+
+      try {
+        const items = await listDriveItems(folderId);
+        listEl.innerHTML = "";
+
+        const folders = items.filter(i => i.mimeType === "application/vnd.google-apps.folder");
+        const files = items.filter(i => i.mimeType !== "application/vnd.google-apps.folder" && (mode === "files" ? DRIVE_IMPORT_RE.test(i.name) : true));
+
+        statusEl.textContent = `${folders.length} dossier${folders.length > 1 ? "s" : ""}, ${files.length} fichier${files.length > 1 ? "s" : ""}`;
+        if(mode === "files" && files.length > 0){
+          toolsEl.style.display = "flex";
+          modal.querySelector("#dr-sel-all").onclick = (e) => {
+            e.preventDefault();
+            files.forEach(f => selectedFiles.set(f.id, f));
+            renderItems(folders, files);
+            updateConfirmBtn();
+          };
+          modal.querySelector("#dr-sel-none").onclick = (e) => {
+            e.preventDefault();
+            files.forEach(f => selectedFiles.delete(f.id));
+            renderItems(folders, files);
+            updateConfirmBtn();
+          };
+        } else {
+          toolsEl.style.display = "none";
+        }
+
+        renderItems(folders, files);
+      } catch(e) {
+        listEl.innerHTML = `<div style="padding:30px 20px;text-align:center;color:#ff6584;">Erreur lors du chargement : ${e.message}</div>`;
+      }
+    }
+
+    function renderItems(folders, files){
+      listEl.innerHTML = "";
+      if(folders.length === 0 && (mode === "folder" || files.length === 0)){
+        const empty = document.createElement("div");
+        empty.style.cssText = "padding:40px 20px;text-align:center;color:#7a6d8c;font-size:13px;";
+        empty.textContent = "Ce dossier est vide.";
+        listEl.appendChild(empty);
+        return;
+      }
+
+      folders.forEach(f => {
+        const row = document.createElement("div");
+        row.style.cssText = "display:flex;align-items:center;gap:12px;padding:10px 20px;cursor:pointer;border-bottom:1px solid #201a29;transition:background .15s;";
+        row.onmouseover = () => row.style.background = "#241d2e";
+        row.onmouseout = () => row.style.background = "transparent";
+        row.innerHTML = `<span style="font-size:18px;">📁</span><span style="flex:1;font-size:13px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${f.name}</span><span style="color:#6a5e7c;font-size:12px;">›</span>`;
+        row.onclick = () => {
+          history.push(f);
+          currentFolder = f;
+          loadFolder(f.id);
+        };
+        listEl.appendChild(row);
+      });
+
+      if(mode === "files"){
+        files.forEach(f => {
+          const row = document.createElement("div");
+          const isSelected = selectedFiles.has(f.id);
+          row.style.cssText = "display:flex;align-items:center;gap:12px;padding:10px 20px;cursor:pointer;border-bottom:1px solid #201a29;transition:background .15s;background:" + (isSelected ? "#2d1c2d" : "transparent");
+          const mb = f.size ? (f.size / 1048576).toFixed(1) + " Mo" : "";
+          row.innerHTML = `
+            <input type="checkbox" ${isSelected ? "checked" : ""} style="cursor:pointer;accent-color:#ff6584;width:16px;height:16px;">
+            <span style="font-size:16px;">📖</span>
+            <div style="flex:1;min-width:0;">
+              <div style="font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${f.name}</div>
+              <div style="font-size:11px;color:#7a6d8c;">${mb}</div>
+            </div>
+          `;
+          const chk = row.querySelector("input");
+          const toggle = () => {
+            if(selectedFiles.has(f.id)){ selectedFiles.delete(f.id); chk.checked = false; row.style.background = "transparent"; }
+            else { selectedFiles.set(f.id, f); chk.checked = true; row.style.background = "#2d1c2d"; }
+            updateConfirmBtn();
+          };
+          row.onclick = (e) => { if(e.target !== chk) toggle(); };
+          chk.onchange = toggle;
+          listEl.appendChild(row);
+        });
+      }
+    }
+
+    modal.querySelector("#dr-close").onclick = () => { overlay.remove(); resolve(null); };
+    modal.querySelector("#dr-cancel").onclick = () => { overlay.remove(); resolve(null); };
+
+    confirmBtn.onclick = () => {
+      overlay.remove();
+      if(mode === "folder"){
+        resolve({ id: currentFolder.id, name: currentFolder.name });
+      } else {
+        const arr = Array.from(selectedFiles.values()).map(f => ({ id: f.id, name: f.name, sizeBytes: f.size }));
+        resolve(arr);
+      }
     };
-    driveTokenClient.requestAccessToken({prompt: driveToken?"":"consent"});
+
+    loadFolder("root");
   });
 }
 
-async function findOrCreateFolder(name){
-  const q=encodeURIComponent(`name='${name}' and mimeType='application/vnd.google-apps.folder' and trashed=false`);
-  const r=await fetch(`https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id)`,
-    {headers:{Authorization:"Bearer "+driveToken}});
-  const j=await r.json();
-  if(j.files && j.files.length) return j.files[0].id;
-  const c=await fetch("https://www.googleapis.com/drive/v3/files",{
-    method:"POST",headers:{Authorization:"Bearer "+driveToken,"Content-Type":"application/json"},
-    body:JSON.stringify({name,mimeType:"application/vnd.google-apps.folder"})});
-  return (await c.json()).id;
-}
 
-async function uploadToDrive(name,blob,folderId){
-  const mimeType = name.endsWith(".epub") ? "application/epub+zip" : "application/x-cbz";
-  const meta = { name, mimeType, parents: folderId ? [folderId] : undefined };
-  const form = new FormData();
-  form.append("metadata", new Blob([JSON.stringify(meta)], {type: "application/json"}));
-  form.append("file", blob, name);
-  const r = await fetch("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart", {
-    method: "POST", headers: {Authorization: "Bearer "+driveToken}, body: form
-  });
-  if(!r.ok) throw new Error("upload "+r.status);
-  return r.json();
-}
-
-// Demande la clé API (sélecteur visuel) si absente ; valeur mémorisée.
-function ensureApiKeyPrompt(extra){
-  if(driveApiKey()) return true;
-  const k=(prompt("Colle ta CLÉ API Google (celle qui commence par « AIza… »).\n\n"+(extra||""))||"").trim();
-  if(!k) return false;
-  if(!API_KEY_RE.test(k)){ alert("Ça ne ressemble pas à une clé API.\nElle commence par « AIza… »."); return false; }
-  localStorage.setItem("shiori_gapikey", k);
-  return true;
-}
-
-// Télécharge un fichier Drive (avec renouvellement de jeton si expiré).
-async function driveDownload(id,retried){
-  const r=await fetch(`https://www.googleapis.com/drive/v3/files/${id}?alt=media`,
-    {headers:{Authorization:"Bearer "+driveToken}});
-  if(r.status===401 && !retried){ await getDriveToken(); return driveDownload(id,true); }
-  if(!r.ok) throw new Error("téléchargement Drive "+r.status);
-  return r.blob();
-}
-
-// Sélecteur multi-fichiers Drive. Résout [{id,name,sizeBytes}], [] si annulé.
-function pickDriveFiles(){
-  return new Promise((resolve,reject)=>{
-    const key=driveApiKey();
-    if(!key) return reject(new Error("apikey"));
-    const view=new google.picker.DocsView(google.picker.ViewId.DOCS)
-      .setIncludeFolders(true).setSelectFolderEnabled(false);
-    const picker=new google.picker.PickerBuilder()
-      .setOAuthToken(driveToken).setDeveloperKey(key)
-      .enableFeature(google.picker.Feature.MULTISELECT_ENABLED)
-      .setTitle("Choisis les fichiers à convertir")
-      .addView(view)
-      .setCallback((d)=>{
-        const a=d[google.picker.Response.ACTION];
-        if(a===google.picker.Action.PICKED)
-          resolve(d[google.picker.Response.DOCUMENTS].map(doc=>({id:doc.id,name:doc.name,sizeBytes:doc.sizeBytes})));
-        else if(a===google.picker.Action.CANCEL) resolve([]);
-      })
-      .build();
-    picker.setVisible(true);
-  });
-}
-
-/* Import depuis Drive : les fichiers sont téléchargés un par un pour lister
-   leurs pages, puis (zip/cbz/epub) le contenu est RELÂCHÉ et re-téléchargé à
-   la demande pendant l'aperçu/conversion — une seule archive en mémoire à la
-   fois, comme pour les fichiers locaux. Les originaux Drive deviennent
-   nettoyables (corbeille Drive) après conversion vérifiée. */
-const DRIVE_IMPORT_RE=/\.(cbz|zip|cbr|rar|pdf|epub|jpe?g|png|webp|gif|bmp)$/i;
 async function importFromDrive(){
+  const btn=$("drive-import"), old=btn.textContent;
+  btn.disabled=true;
+  try{
+    btn.textContent="Connexion…";
+    if(!(await ensureDriveAuth())){ btn.textContent=old; btn.disabled=false; return; }
+    btn.textContent=old;
+    const picked = await showDriveExplorer({ mode: "files", title: "Ouvrir des mangas depuis Google Drive" });
+    if(!picked || !picked.length){ btn.disabled=false; return; }
+    let failed=0;
+    for(let i=0;i<picked.length;i++){
+      const f=picked[i];
+      importProgress(i+1,picked.length,f.name);
+      await new Promise(r=>setTimeout(r,0));
+      try{
+        const blob=await driveDownload(f.id);
+        const file=new File([blob],f.name,{type:blob.type||""});
+        const {jobs,failed:ff}=await buildJobsFromFiles([file]);
+        failed+=ff;
+        for(const j of jobs){
+          if(j.file && !j.rar && !j.pdfDoc){
+            j.driveId=f.id;
+            j.srcSize=f.sizeBytes?+f.sizeBytes:blob.size;
+            j.file=null;
+          }
+          j.delEntries=[{driveId:f.id, name:f.name}];
+          state.jobs.push(j);
+        }
+      }catch(e){ failed++; console.error("drive import fail",f.name,e); }
+    }
+    importProgress(null);
+    if(!state.jobs.length){ alert("Aucun fichier exploitable parmi la sélection."); btn.disabled=false; return; }
+    if(failed) alert(failed+" fichier(s) illisibles ignorés.");
+    buildPreviewIndex();
+    enterWorkspace();
+  }catch(e){
+    importProgress(null);
+    alert("Import Drive : "+e.message);
+  }
+  btn.textContent=old; btn.disabled=false;
+}
   const btn=$("drive-import"), old=btn.textContent;
   btn.disabled=true;
   try{
@@ -2343,28 +2457,19 @@ async function importFromDrive(){
 async function driveConnect(status){
   if(!driveClientId()){
     const cid=(prompt("Export Drive — colle ton ID CLIENT OAuth\n(celui qui finit par « .apps.googleusercontent.com », ligne « Shiori Web »).\n\n"+
-                      "⚠️ Ce n'est PAS la clé API (AIza…) — elle sera demandée juste après.\n"+
                       "Mémorisé dans ce navigateur.")||"").trim();
     if(!cid) return null;
-    if(!CLIENT_ID_RE.test(cid)){
-      alert("Ça ne ressemble pas à un ID client OAuth.\nIl doit finir par « .apps.googleusercontent.com ».\n\n(Si tu as collé la clé « AIza… », c'est la clé API : elle sera demandée à l'étape suivante.)");
-      return null;
-    }
+    if(!CLIENT_ID_RE.test(cid)){ alert("Ça ne ressemble pas à un ID client OAuth."); return null; }
     localStorage.setItem("shiori_gclient", cid);
   }
-  if(!driveReady()){ alert("Le service Google ne s'est pas chargé (souvent bloqué dans l'aperçu en bac à sable). Réessaie sur la version hébergée."); return null; }
+  if(!driveReady()){ alert("Le service Google ne s'est pas chargé. Réessaie sur la version hébergée."); return null; }
   status("Connexion…");
   await getDriveToken();
 
-  ensureApiKeyPrompt("Laisse vide pour envoyer dans un dossier « Shiori » créé automatiquement.");
-  if(driveApiKey()){
-    status("Choix du dossier…");
-    await loadPicker();
-    const picked=await pickFolder();
-    if(!picked) return null; // annulé
-    return {folderId:picked.id, folderName:picked.name};
-  }
-  return {folderId:await findOrCreateFolder("Shiori"), folderName:"Shiori"};
+  status("Choix du dossier…");
+  const picked = await showDriveExplorer({ mode: "folder", title: "Choisis le dossier de destination sur Google Drive" });
+  if(!picked) return null; // annulé
+  return { folderId: picked.id, folderName: picked.name };
 }
 
 async function exportToDrive(btn){
