@@ -615,6 +615,9 @@
         <label class="toggle"><input type="checkbox" id="rtl" checked><span class="sw"></span>
           <span class="stack">Sens manga (droite → gauche)<span class="desc">Ajoute ComicInfo pour la liseuse</span></span></label>
 
+        <label class="toggle"><input type="checkbox" id="passthrough"><span class="sw"></span>
+          <span class="stack">⚡ Remballage express (CBZ → KEPUB)<span class="desc">Garde les images sans ré-encoder (ultra-rapide)</span></span></label>
+
         <label class="toggle"><input type="checkbox" id="rename"><span class="sw"></span>
           <span class="stack">Renommer automatiquement<span class="desc">Nettoie les noms (série + tome)</span></span></label>
 
@@ -745,7 +748,7 @@ const els = {
   profile:$("profile"), customDims:$("custom-dims"), cw:$("cw"), ch:$("ch"),
   preset:$("preset"),
   outformat:$("outformat"), colormode:$("colormode"), rtl:$("rtl"), dblmode:$("dblmode"), rotdir:$("rotdir"), rotdirField:$("rotdir-field"),
-  rename:$("rename"), renameField:$("rename-field"), renametpl:$("renametpl"), renamePreview:$("rename-preview"),
+  passthrough:$("passthrough"), rename:$("rename"), renameField:$("rename-field"), renametpl:$("renametpl"), renamePreview:$("rename-preview"),
   levels:$("levels"), trim:$("trim"), sharpen:$("sharpen"), webtoon:$("webtoon"), autoclean:$("autoclean"),
   gamma:$("gamma"), gammaV:$("gamma-v"), quality:$("quality"), qualityV:$("quality-v"),
   prev:$("prev"), next:$("next"), pgLabel:$("pg-label"),
@@ -768,7 +771,7 @@ function opts(){
   const d=targetDims();
   return {
     tw:d.w, th:d.h,
-    outformat:els.outformat?els.outformat.value:"kepub", colorMode:els.colormode.value, rtl:els.rtl.checked,
+    outformat:els.outformat?els.outformat.value:"kepub", passthrough:els.passthrough?els.passthrough.checked:false, colorMode:els.colormode.value, rtl:els.rtl.checked,
     dblmode:els.dblmode.value, rotdir:els.rotdir.value,
     levels:els.levels.checked, trim:els.trim.checked, sharpen:els.sharpen.checked, webtoon:els.webtoon.checked,
     gamma:+els.gamma.value, quality:+els.quality.value/100,
@@ -777,7 +780,7 @@ function opts(){
 
 /* ---------- Réglages mémorisés (localStorage) ---------- */
 const LS_KEY="shiori_settings_v1";
-const SETTINGS_IDS=["preset","profile","cw","ch","outformat","colormode","rtl","dblmode","rotdir","rename","renametpl","levels","trim","sharpen","webtoon","autoclean","gamma","quality"];
+const SETTINGS_IDS=["preset","profile","cw","ch","outformat","passthrough","colormode","rtl","dblmode","rotdir","rename","renametpl","levels","trim","sharpen","webtoon","autoclean","gamma","quality"];
 function snapshotSettings(){
   const s={};
   for(const id of SETTINGS_IDS){ const el=$(id); if(!el)continue; s[id]=el.type==="checkbox"?el.checked:el.value; }
@@ -1753,6 +1756,11 @@ async function runConvert(sink,append){
         else                             blob=page.blob;
       }
       catch(e){ pageFails++; tick(j,job); return []; }
+      if(o.passthrough){
+        stats.outPages++;
+        tick(j,job);
+        return [blob];
+      }
       let r; try{ r=await processor.run(blob,o); }catch(e){ pageFails++; tick(j,job); return []; }
       if(r.gray) stats.grayPages++; else stats.colorPages++;
       if(r.isSpread) stats.spreads++;
