@@ -2167,6 +2167,46 @@ function ensureDriveClient(){
   return true;
 }
 
+function getDriveToken(){
+  return new Promise((resolve,reject)=>{
+    if(!ensureDriveClient()) return reject(new Error("Service Google Drive non initialisé"));
+    driveTokenClient.callback=(resp)=>{
+      if(resp && resp.access_token){ driveToken=resp.access_token; resolve(driveToken); }
+      else reject(new Error("Authentification refusée"));
+    };
+    driveTokenClient.requestAccessToken({prompt: driveToken?"":"consent"});
+  });
+}
+
+async function ensureDriveAuth(){
+  if(!driveClientId()){
+    const cid=(prompt("Connexion Google Drive — colle ton ID CLIENT OAuth\n(celui qui finit par « .apps.googleusercontent.com », ligne « Shiori Web »).\n\nMémorisé dans ce navigateur.")||"").trim();
+    if(!cid) return false;
+    if(!CLIENT_ID_RE.test(cid)){ alert("Ça ne ressemble pas à un ID client OAuth."); return false; }
+    localStorage.setItem("shiori_gclient", cid);
+  }
+  if(!driveReady()){ alert("Le service Google ne s'est pas chargé. Réessaie sur la version hébergée."); return false; }
+  try {
+    await getDriveToken();
+    return true;
+  } catch(e) {
+    alert("Authentification Google Drive : " + e.message);
+    return false;
+  }
+}
+
+async function findOrCreateFolder(name){
+  const q=encodeURIComponent(`name='${name}' and mimeType='application/vnd.google-apps.folder' and trashed=false`);
+  const r=await fetch(`https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id)`,
+    {headers:{Authorization:"Bearer "+driveToken}});
+  const j=await r.json();
+  if(j.files && j.files.length) return j.files[0].id;
+  const c=await fetch("https://www.googleapis.com/drive/v3/files",{
+    method:"POST",headers:{Authorization:"Bearer "+driveToken,"Content-Type":"application/json"},
+    body:JSON.stringify({name,mimeType:"application/vnd.google-apps.folder"})});
+  return (await c.json()).id;
+}
+
 // Navigateur Google Drive natif Shiori (100% OAuth, 0 clé API nécessaire)
 async function listDriveItems(parentId = "root"){
   const q = `'${parentId}' in parents and trashed = false`;
