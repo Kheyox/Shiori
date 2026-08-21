@@ -3354,6 +3354,50 @@ els.convertDrive.addEventListener("click",async()=>{
 });
 els.reset.addEventListener("click",resetAll);
 
+async function triggerMainConversion(){
+  if(!state.jobs || !state.jobs.length){
+    alert("Aucun manga ou tome chargé pour le moment.");
+    return;
+  }
+  const dest = $("dest-choice") ? $("dest-choice").value : "drive";
+  const mainBtn = $("main-convert-action");
+  const mainLbl = $("main-convert-label");
+  const oldText = mainLbl ? mainLbl.textContent : "Lancer la conversion";
+
+  if(dest === "drive"){
+    if(mainBtn) mainBtn.disabled = true;
+    let sink = null;
+    try{
+      const destFolder = await driveConnect(t => { if(mainLbl) mainLbl.textContent = t; });
+      if(destFolder){
+        if(mainLbl) mainLbl.textContent = "Lecture du dossier…";
+        sink = await makeDriveSink(destFolder.folderId, destFolder.folderName);
+      }
+    }catch(e){
+      alert("Google Drive : " + e.message);
+    }
+    if(mainBtn) mainBtn.disabled = false;
+    if(mainLbl) mainLbl.textContent = oldText;
+    if(sink) runConvert(sink);
+  } else if(dest === "dir"){
+    if(!window.showDirectoryPicker){
+      alert("Votre navigateur ne supporte pas l'accès direct aux dossiers. Choisissez le mode Téléchargement direct.");
+      return;
+    }
+    let dir;
+    try{ dir = await window.showDirectoryPicker({mode: "readwrite"}); }
+    catch(e){ return; } // annulé
+    runConvert(makeDirSink(dir));
+  } else {
+    runConvert();
+  }
+}
+
+if($("main-convert-action")){
+  $("main-convert-action").addEventListener("click", triggerMainConversion);
+}
+
+
 // reflect (possibly restored) settings in the UI, then restore from localStorage
 function syncUI(){
   if(typeof syncModernUI==='function') syncModernUI();
