@@ -2197,6 +2197,24 @@ function generateKepubPackage({title, series, number, author, description, publi
     `    <meta name="cover" content="cover-image"/>`
   ];
 
+  if(author){
+    metaLines.push(`    <dc:creator id="creator">${esc(author)}</dc:creator>`);
+    metaLines.push(`    <meta refines="#creator" property="role" scheme="marc:relators">aut</meta>`);
+    metaLines.push(`    <meta name="calibre:author" content="${esc(author)}"/>`);
+  }
+  if(description){
+    metaLines.push(`    <dc:description>${esc(description)}</dc:description>`);
+  }
+  if(publisher){
+    metaLines.push(`    <dc:publisher>${esc(publisher)}</dc:publisher>`);
+  }
+  if(publishedDate){
+    metaLines.push(`    <dc:date>${esc(publishedDate)}</dc:date>`);
+  }
+  if(genres && genres.length){
+    genres.forEach(g => metaLines.push(`    <dc:subject>${esc(g)}</dc:subject>`));
+  }
+
   if(series){
     metaLines.push(`    <meta property="belongs-to-collection" id="c01">${esc(series)}</meta>`);
     metaLines.push(`    <meta refines="#c01" property="collection-type">series</meta>`);
