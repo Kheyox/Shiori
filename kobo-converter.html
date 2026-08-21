@@ -20,18 +20,22 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <style>
   :root{
-    --bg:#120e1e;
-    --surface:rgba(29, 21, 38, 0.76);
-    --surface-2:rgba(49, 31, 61, 0.83);
-    --border:rgba(143, 77, 109, 0.28);
+    --bg:#0f0c18;
+    --surface:rgba(24, 18, 32, 0.75);
+    --surface-2:rgba(38, 28, 50, 0.85);
+    --surface-card:rgba(28, 20, 38, 0.88);
+    --border:rgba(255, 101, 132, 0.18);
+    --border-subtle:rgba(255, 255, 255, 0.08);
     --paper:#f5f1fa;
-    --ink:#d94b76;        /* cherry pink */
-    --ink-deep:#b33055;
-    --text:#f5effa;
-    --muted:#ab9eb5;
-    --muted-2:#7d6f88;
-    --ok:#85c278;
+    --ink:#ff5983;        /* vibrant sakura pink */
+    --ink-deep:#d83b65;
+    --ink-glow:rgba(255, 89, 131, 0.28);
+    --text:#f8f6fc;
+    --muted:#b3a6c2;
+    --muted-2:#827393;
+    --ok:#4cd964;
     --radius:16px;
+    --card-radius:12px;
   }
   *{box-sizing:border-box}
   html{margin:0;background:linear-gradient(135deg, #110d1c 0%, #20142b 45%, #3c1e3b 80%, #572942 100%);color:var(--text);
@@ -245,6 +249,72 @@
     border-top:1px solid var(--border);padding-top:18px}
   footer code{background:var(--surface-2);padding:1px 6px;border-radius:5px;color:var(--muted);font-size:11.5px}
   .hidden{display:none!important}
+
+  /* Modern UI Sections */
+  .settings-card{
+    background:var(--surface-card);
+    border:1px solid var(--border);
+    border-radius:var(--card-radius);
+    padding:16px;
+    margin-bottom:14px;
+    box-shadow:0 8px 24px rgba(0,0,0,0.3);
+    transition:opacity .2s ease, border-color .2s ease;
+  }
+  .settings-card:last-child{margin-bottom:0}
+  .card-title{
+    display:flex;align-items:center;gap:8px;font-size:13px;font-weight:700;
+    color:var(--text);margin-bottom:12px;letter-spacing:.02em;text-transform:uppercase;
+  }
+  .card-title .badge{
+    font-size:10.5px;padding:2px 7px;border-radius:999px;background:var(--ink-glow);
+    color:var(--ink);font-weight:600;text-transform:none;margin-left:auto;
+  }
+  .card-dimmed{
+    opacity:0.42;
+    pointer-events:none;
+    filter:grayscale(0.5);
+  }
+
+  /* Volume Strip */
+  .tome-strip{
+    display:flex;gap:8px;overflow-x:auto;padding:10px 4px 6px;margin-top:14px;
+    scrollbar-width:thin;scrollbar-color:var(--ink) transparent;
+  }
+  .tome-chip{
+    display:flex;align-items:center;gap:8px;background:var(--surface-card);
+    border:1px solid var(--border);border-radius:10px;padding:7px 12px;
+    cursor:pointer;white-space:nowrap;font-size:12.5px;color:var(--text);
+    transition:all .15s ease;flex-shrink:0;user-select:none;
+  }
+  .tome-chip:hover{border-color:var(--ink);transform:translateY(-1px);background:var(--surface-2);}
+  .tome-chip.active{border-color:var(--ink);background:var(--ink-glow);color:#fff;font-weight:600;box-shadow:0 0 12px var(--ink-glow);}
+
+  /* Unified Action Bar */
+  .action-bar-unified{
+    display:flex;align-items:center;gap:12px;margin-top:20px;flex-wrap:wrap;
+    background:var(--surface-card);border:1px solid var(--border);border-radius:14px;
+    padding:12px 16px;box-shadow:0 12px 32px rgba(0,0,0,0.45);
+  }
+  .main-convert-btn{
+    background:linear-gradient(135deg, #ff5983 0%, #d83b65 100%);
+    color:#fff;border:none;border-radius:10px;padding:12px 28px;
+    font-size:15px;font-weight:700;cursor:pointer;font-family:inherit;
+    display:flex;align-items:center;gap:9px;box-shadow:0 4px 16px var(--ink-glow);
+    transition:all .15s ease;
+  }
+  .main-convert-btn:hover{transform:translateY(-1px);box-shadow:0 6px 20px rgba(255,89,131,0.45);filter:brightness(1.08);}
+  .main-convert-btn:active{transform:translateY(1px);}
+  .main-convert-btn:disabled{opacity:0.5;cursor:default;transform:none!important;box-shadow:none!important;}
+
+  .dest-select-wrap{
+    display:flex;align-items:center;gap:6px;background:var(--bg);
+    border:1px solid var(--border);border-radius:10px;padding:3px 8px;font-size:13px;
+  }
+  .dest-select-wrap select{
+    background:transparent;border:none;color:var(--text);font-size:13px;font-weight:600;
+    cursor:pointer;padding:6px 4px;outline:none;
+  }
+
 </style>
 </head>
 <body>
@@ -708,16 +778,37 @@
     <div class="notice hidden" id="dup-banner"></div>
     <div class="notice hidden" id="merge-banner"></div>
 
-    <div class="runbar">
-      <button class="btn" id="convert">Convertir</button>
-      <button class="btn ghost hidden" id="convert-dir" title="Choisis un dossier ; chaque tome y est écrit dès qu'il est prêt (mémoire minimale, idéal gros lots / Kobo branchée)">Convertir → dossier</button>
-      <button class="btn ghost" id="convert-drive" title="Chaque tome part sur Drive dès qu'il est prêt ; les tomes déjà présents sont ignorés (reprise)">Convertir → Drive</button>
-      <button class="btn ghost" id="add-queue" title="Met ce lot de côté avec SES réglages actuels ; tu pourras préparer d'autres lots puis tout convertir d'un coup">＋ File d'attente</button>
-      <button class="btn ghost" id="reset">Recommencer</button>
-      <div class="prog hidden" id="prog">
-        <div class="bar"><div class="fill" id="prog-fill"></div></div>
-        <div class="txt" id="prog-txt"></div>
+    <!-- Carrousel / Bandeau des tomes -->
+    <div id="tome-strip" class="tome-strip hidden"></div>
+
+    <!-- Unified Action Bar -->
+    <div class="action-bar-unified">
+      <button class="main-convert-btn" id="main-convert-action">
+        <span style="font-size:18px">🚀</span>
+        <span id="main-convert-label">Lancer la conversion</span>
+      </button>
+
+      <div class="dest-select-wrap">
+        <span style="color:var(--muted);font-size:12px">Destination :</span>
+        <select id="dest-choice">
+          <option value="drive" selected>☁️ Google Drive</option>
+          <option value="dir">💾 Dossier PC / Kobo USB</option>
+          <option value="zip">📥 Téléchargement direct</option>
+        </select>
       </div>
+
+      <button class="ra-btn drive" id="add-queue" title="Met ce lot de côté dans la file d'attente" style="margin-left:auto;font-size:12.5px;padding:8px 14px">＋ File d'attente</button>
+      <button class="ra-btn drive" id="reset" title="Réinitialiser" style="font-size:12.5px;padding:8px 14px">↺ Recommencer</button>
+
+      <!-- Boutons masqués pour compatibilité interne -->
+      <button class="hidden" id="convert"></button>
+      <button class="hidden" id="convert-dir"></button>
+      <button class="hidden" id="convert-drive"></button>
+    </div>
+
+    <div class="prog hidden" id="prog" style="margin-top:14px">
+      <div class="bar"><div class="fill" id="prog-fill"></div></div>
+      <div class="txt" id="prog-txt"></div>
     </div>
 
     <div class="results" id="results"></div>
@@ -3288,6 +3379,7 @@ els.reset.addEventListener("click",resetAll);
 
 // reflect (possibly restored) settings in the UI, then restore from localStorage
 function syncUI(){
+  if(typeof syncModernUI==='function') syncModernUI();
   els.customDims.classList.toggle("hidden", els.profile.value!=="custom");
   syncDevice();
   els.gammaV.textContent=(+els.gamma.value).toFixed(2);
