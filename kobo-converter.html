@@ -1776,9 +1776,13 @@ async function runConvert(sink,append){
     const outCount=allBlobs.length;
 
     const meta=job.merged?{series:job.series,tome:null}:parseName(job.rawName||job.name);
+    let off=null;
+    if(meta.series){
+      try{ off=await getSeriesMetadata(meta.series); }catch(e){}
+    }
     const outZip = o.outformat==="kepub"
-      ? generateKepubPackage({title:base, series:meta.series, number:meta.tome, images:allBlobs, tw:o.tw, th:o.th, rtl:o.rtl})
-      : generateCbzPackage({title:base, series:meta.series, number:meta.tome, images:allBlobs, rtl:o.rtl});
+      ? generateKepubPackage({title:base, series:meta.series, number:meta.tome, author:off?.author, description:off?.description, publisher:off?.publisher, publishedDate:off?.publishedDate, genres:off?.genres, images:allBlobs, tw:o.tw, th:o.th, rtl:o.rtl})
+      : generateCbzPackage({title:base, series:meta.series, number:meta.tome, author:off?.author, description:off?.description, publisher:off?.publisher, publishedDate:off?.publishedDate, genres:off?.genres, images:allBlobs, rtl:o.rtl});
 
     const cbz=await outZip.generateAsync({
       type:"blob",
@@ -1952,8 +1956,112 @@ async function downloadAll(btn){
   }
 }
 
+
+// ---------- Moteur de métadonnées automatiques (AniList / OpenLibrary / Google Books) ----------
+const seriesMetaCache = new Map();
+async function getSeriesMetadata(seriesName) {
+  if (!seriesName) return null;
+  const key = seriesName.trim().toLowerCase();
+  if (seriesMetaCache.has(key)) return seriesMetaCache.get(key);
+
+  const clean = seriesName.trim();
+  let result = null;
+
+  // 1. AniList (Idéal Mangas japonais)
+  try {
+    const query = `query ($search: String) {
+      Media (search: $search, type: MANGA) {
+        description(asHtml: false)
+        staff(sort: RELEVANCE, perPage: 5) {
+          edges {
+            role
+            node { name { full } }
+          }
+        }
+        genres
+        startDate { year }
+      }
+    }`;
+    const res = await fetch("https://graphql.anilist.co", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Accept": "application/json" },
+      body: JSON.stringify({ query, variables: { search: clean } })
+    });
+    if (res.ok) {
+      const data = await res.json();
+      const media = data.data && data.data.Media;
+      if (media) {
+        const authors = (media.staff && media.staff.edges)
+          ? media.staff.edges.filter(e => /story|art|original/i.test(e.role)).map(e => e.node.name.full)
+          : [];
+        result = {
+          author: authors.join(", ") || (media.staff?.edges?.[0]?.node?.name?.full || ""),
+          description: (media.description || "").replace(/<[^>]*>/g, "").replace(/\n{3,}/g, "\n\n").trim(),
+          publisher: "",
+          publishedDate: media.startDate?.year ? String(media.startDate.year) : "",
+          genres: media.genres || []
+        };
+      }
+    }
+  } catch(e) {}
+
+  // 2. OpenLibrary (Idéal Comics & BD)
+  if (!result || !result.author) {
+    try {
+      const url = `https://openlibrary.org/search.json?q=${encodeURIComponent(clean)}&limit=3`;
+      const res = await fetch(url);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.docs && data.docs.length > 0) {
+          const doc = data.docs[0];
+          const author = doc.author_name ? doc.author_name.slice(0, 2).join(", ") : "";
+          const publisher = doc.publisher ? doc.publisher[0] : "";
+          const publishedDate = doc.first_publish_year ? String(doc.first_publish_year) : "";
+          const genres = doc.subject ? doc.subject.slice(0, 4) : [];
+          if (author) {
+            result = {
+              author,
+              description: result ? result.description : "",
+              publisher: publisher || (result ? result.publisher : ""),
+              publishedDate: publishedDate || (result ? result.publishedDate : ""),
+              genres: genres.length ? genres : (result ? result.genres : [])
+            };
+          }
+        }
+      }
+    } catch(e) {}
+  }
+
+  // 3. Google Books pour compléter le résumé si manquant
+  if (!result || !result.description) {
+    try {
+      const url = `https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(clean)}&maxResults=3`;
+      const res = await fetch(url);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.items && data.items.length > 0) {
+          for (const it of data.items) {
+            const inf = it.volumeInfo;
+            if (inf && inf.description) {
+              if (!result) result = { author: (inf.authors || []).join(", "), publisher: inf.publisher || "", publishedDate: inf.publishedDate || "", genres: inf.categories || [] };
+              result.description = inf.description.replace(/<[^>]*>/g, "").trim();
+              if (!result.author && inf.authors) result.author = inf.authors.join(", ");
+              if (!result.publisher && inf.publisher) result.publisher = inf.publisher;
+              if (!result.publishedDate && inf.publishedDate) result.publishedDate = inf.publishedDate;
+              break;
+            }
+          }
+        }
+      }
+    } catch(e) {}
+  }
+
+  seriesMetaCache.set(key, result);
+  return result;
+}
+
 // Générateur de package KEPUB Manga (EPUB3 Fixed-Layout optimisé Kobo)
-function generateKepubPackage({title, series, number, images, tw, th, rtl}){
+function generateKepubPackage({title, series, number, author, description, publisher, publishedDate, genres, images, tw, th, rtl}){
   const zip = new JSZip();
   // 1. mimetype (doit être le premier fichier, non compressé)
   zip.file("mimetype", "application/epub+zip", {compression: "STORE"});
@@ -2070,7 +2178,7 @@ ${spineItems.join("\n")}
 }
 
 // Générateur CBZ avec couverture prioritaire et ComicInfo
-function generateCbzPackage({title, series, number, images, rtl}){
+function generateCbzPackage({title, series, number, author, description, publisher, publishedDate, genres, images, rtl}){
   const zip = new JSZip();
   const count = images.length;
   const pad = Math.max(4, String(count).length);
