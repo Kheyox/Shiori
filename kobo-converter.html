@@ -38,7 +38,7 @@
     --card-radius:12px;
   }
   *{box-sizing:border-box}
-  html{margin:0;background:linear-gradient(135deg, #110d1c 0%, #20142b 45%, #3c1e3b 80%, #572942 100%);color:var(--text);
+  html{margin:0;background:linear-gradient(140deg, #07050e 0%, #0e091b 40%, #170d2b 70%, #281136 100%);color:var(--text);
     font-family:"Inter",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,system-ui,sans-serif;
     -webkit-font-smoothing:antialiased;}
   body{min-height:100vh;padding:24px 18px 56px;line-height:1.5;background:transparent}
@@ -101,9 +101,15 @@
     100%{transform:translateX(22px) scaleX(1.05);opacity:0.95;}
   }
 
-  .petal{position:absolute;top:0;display:block;width:10px;height:8px;background:#c97f88;
+  .petal{position:absolute;top:0;display:block;width:10px;height:8px;
+    background:radial-gradient(circle at 30% 30%, #ffd4e0 0%, #ff7fa6 60%, #d63d6c 100%);
     border-radius:80% 0 55% 55% / 55% 0 80% 45%;opacity:0;
+    box-shadow:0 0 8px rgba(255, 127, 166, 0.6);
     animation-name:petal-fall;animation-timing-function:linear;animation-iteration-count:infinite}
+  @keyframes star-twinkle{0%,100%{opacity:0.3;transform:scale(0.8)}50%{opacity:0.95;transform:scale(1.2)}}
+  .twinkle-star{animation:star-twinkle 4s ease-in-out infinite alternate}
+  .moon-cloud{animation:cloud-drift 40s linear infinite alternate}
+  @keyframes cloud-drift{0%{transform:translateX(-30px)}100%{transform:translateX(30px)}}
   @keyframes petal-fall{
     0%{transform:translate3d(0,-6vh,0) rotate(0deg);opacity:0}
     6%{opacity:.4}
@@ -322,212 +328,165 @@
 <!-- Décor de fond : mont Fuji + branche de sakura + pétales (SVG inline,
      très discret pour ne pas gêner la lecture ; masqué aux lecteurs d'écran) -->
 <div id="bg-decor" aria-hidden="true">
-  <!-- Subtle dark overlay to ensure text readability while keeping the image bright -->
-  <div style="position:absolute;inset:0;background:radial-gradient(circle at center, rgba(18,14,30,0.1) 0%, rgba(18,14,30,0.6) 100%);pointer-events:none;z-index:2"></div>
+  <!-- Subtle dark overlay to ensure maximum contrast and text readability -->
+  <div style="position:absolute;inset:0;background:radial-gradient(circle at 50% 30%, rgba(7,5,14,0.2) 0%, rgba(7,5,14,0.7) 100%);pointer-events:none;z-index:2"></div>
   
   <svg id="bg-fuji" viewBox="0 0 1920 1080" preserveAspectRatio="xMidYMid slice" style="position:absolute;inset:0;width:100%;height:100%;z-index:1">
     <defs>
-      <!-- Premium Sunrise Sky -->
-      <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0%" stop-color="#4a76a8"/>
-        <stop offset="40%" stop-color="#8ba9b8"/>
-        <stop offset="65%" stop-color="#f2c89b"/>
-        <stop offset="85%" stop-color="#f2a588"/>
-        <stop offset="100%" stop-color="#e07f75"/>
+      <!-- Deep Kyoto Night Sky -->
+      <linearGradient id="kyoto-night" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stop-color="#06040c"/>
+        <stop offset="35%" stop-color="#0d091e"/>
+        <stop offset="65%" stop-color="#180e2f"/>
+        <stop offset="85%" stop-color="#26123a"/>
+        <stop offset="100%" stop-color="#361543"/>
       </linearGradient>
 
-      <!-- Premium Water Reflection -->
-      <linearGradient id="water" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0%" stop-color="#d18a7d"/>
-        <stop offset="15%" stop-color="#dfa98a"/>
-        <stop offset="40%" stop-color="#8ba9b8"/>
-        <stop offset="100%" stop-color="#4a76a8"/>
+      <!-- Night Water with Moonlight Reflection -->
+      <linearGradient id="night-lake" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stop-color="#2a1438"/>
+        <stop offset="25%" stop-color="#190e2b"/>
+        <stop offset="60%" stop-color="#0f091c"/>
+        <stop offset="100%" stop-color="#06040d"/>
       </linearGradient>
 
-      <!-- 3D Mountain Gradient -->
-      <linearGradient id="fuji-grad" x1="0" y1="0" x2="1" y2="0">
-        <stop offset="35%" stop-color="#2a3556"/> <!-- Deep blue shadow -->
-        <stop offset="55%" stop-color="#554d63"/> <!-- Mid transition -->
-        <stop offset="85%" stop-color="#8c584f"/> <!-- Golden sunlight -->
+      <!-- Moon Aura & Texture -->
+      <radialGradient id="moon-glow" cx="50%" cy="50%" r="50%">
+        <stop offset="0%" stop-color="#fff8fc" stop-opacity="1"/>
+        <stop offset="60%" stop-color="#eeddfc" stop-opacity="0.9"/>
+        <stop offset="80%" stop-color="#d6b8f5" stop-opacity="0.4"/>
+        <stop offset="100%" stop-color="#a477d9" stop-opacity="0"/>
+      </radialGradient>
+      <radialGradient id="moon-halo" cx="50%" cy="50%" r="50%">
+        <stop offset="0%" stop-color="#d4baf7" stop-opacity="0.45"/>
+        <stop offset="50%" stop-color="#9a70d9" stop-opacity="0.18"/>
+        <stop offset="100%" stop-color="#553096" stop-opacity="0"/>
+      </radialGradient>
+
+      <!-- Fuji Night Silhouette & Moonlight Glint -->
+      <linearGradient id="fuji-night" x1="0" y1="0" x2="1" y2="0">
+        <stop offset="30%" stop-color="#0c0818"/>
+        <stop offset="55%" stop-color="#17102b"/>
+        <stop offset="85%" stop-color="#281a3d"/>
+      </linearGradient>
+      <linearGradient id="snow-night" x1="0" y1="0" x2="1" y2="0">
+        <stop offset="30%" stop-color="#7683ac"/>
+        <stop offset="60%" stop-color="#a4b3d9"/>
+        <stop offset="85%" stop-color="#d6e0f8"/>
       </linearGradient>
 
-      <!-- 3D Snowcap Gradient -->
-      <linearGradient id="snow-grad" x1="0" y1="0" x2="1" y2="0">
-        <stop offset="40%" stop-color="#c5d4eb"/> <!-- Blue tinted shadow snow -->
-        <stop offset="60%" stop-color="#e8e1eb"/> <!-- White center -->
-        <stop offset="80%" stop-color="#fce4cb"/> <!-- Golden sunlit snow -->
+      <!-- Luminous Night Sakura Flower -->
+      <linearGradient id="night-petal" x1="0%" y1="100%" x2="0%" y2="0%">
+        <stop offset="0%" stop-color="#b8325a"/>
+        <stop offset="50%" stop-color="#ff7fa6"/>
+        <stop offset="100%" stop-color="#ffeef3"/>
       </linearGradient>
-
-      <!-- Elegant Fog Gradients -->
-      <linearGradient id="fog-1" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0%" stop-color="#f5ccbd" stop-opacity="0"/>
-        <stop offset="50%" stop-color="#eeb8b3" stop-opacity="0.8"/>
-        <stop offset="100%" stop-color="#e1afaa" stop-opacity="1"/>
-      </linearGradient>
-      <linearGradient id="fog-2" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0%" stop-color="#f7ddce" stop-opacity="0"/>
-        <stop offset="50%" stop-color="#f7ddce" stop-opacity="0.6"/>
-        <stop offset="100%" stop-color="#eca499" stop-opacity="0.9"/>
-      </linearGradient>
-
-      <!-- Highly Detailed Sakura Flower -->
-      <linearGradient id="petal-grad" x1="0%" y1="100%" x2="0%" y2="0%">
-        <stop offset="0%" stop-color="#e25d80"/>
-        <stop offset="50%" stop-color="#ffa3b5"/>
-        <stop offset="100%" stop-color="#ffe6ec"/>
-      </linearGradient>
-      <path id="sakura-petal" fill="url(#petal-grad)" d="M 0,0 C -6,-11 -9,-21 -3,-24 C -1,-25 1,-25 3,-24 C 9,-21 6,-11 0,0"/>
-      <g id="sakura-flower">
-        <use href="#sakura-petal"/>
-        <use href="#sakura-petal" transform="rotate(72)"/>
-        <use href="#sakura-petal" transform="rotate(144)"/>
-        <use href="#sakura-petal" transform="rotate(216)"/>
-        <use href="#sakura-petal" transform="rotate(288)"/>
-        <circle cx="0" cy="0" r="3" fill="#a0284e"/>
-        <!-- Detailed stamens -->
-        <g stroke="#911b3f" stroke-width="0.5">
-          <line x1="0" y1="0" x2="0" y2="-7"/> <line x1="0" y1="0" x2="5" y2="-5"/>
-          <line x1="0" y1="0" x2="7" y2="0"/>  <line x1="0" y1="0" x2="5" y2="5"/>
-          <line x1="0" y1="0" x2="0" y2="7"/>  <line x1="0" y1="0" x2="-5" y2="5"/>
-          <line x1="0" y1="0" x2="-7" y2="0"/> <line x1="0" y1="0" x2="-5" y2="-5"/>
-        </g>
-        <g fill="#ffd075">
-          <circle cx="0" cy="-7" r="1"/> <circle cx="5" cy="-5" r="1"/>
-          <circle cx="7" cy="0" r="1"/>  <circle cx="5" cy="5" r="1"/>
-          <circle cx="0" cy="7" r="1"/>  <circle cx="-5" cy="5" r="1"/>
-          <circle cx="-7" cy="0" r="1"/> <circle cx="-5" cy="-5" r="1"/>
-        </g>
-        <circle cx="0" cy="0" r="1.5" fill="#fca1b9"/>
-      </g>
-      <g id="sakura-bud">
-        <path fill="#851637" d="M0,0 C-2,-4 -2,-8 0,-10 C2,-8 2,-4 0,0"/>
-        <path fill="url(#petal-grad)" d="M-1,-2 C-3,-5 -1,-9 0,-11 C1,-9 3,-5 1,-2 Z" transform="rotate(-15)"/>
-        <path fill="url(#petal-grad)" d="M1,-2 C-1,-5 0,-9 1,-11 C2,-9 4,-5 2,-2 Z" transform="rotate(15)"/>
+      <path id="n-petal" fill="url(#night-petal)" d="M 0,0 C -5,-9 -8,-17 -2,-19 C 0,-20 1,-20 2,-19 C 8,-17 5,-9 0,0"/>
+      <g id="night-sakura">
+        <use href="#n-petal"/>
+        <use href="#n-petal" transform="rotate(72)"/>
+        <use href="#n-petal" transform="rotate(144)"/>
+        <use href="#n-petal" transform="rotate(216)"/>
+        <use href="#n-petal" transform="rotate(288)"/>
+        <circle cx="0" cy="0" r="2.5" fill="#751532"/>
+        <circle cx="0" cy="0" r="1.2" fill="#ffd4e2"/>
       </g>
 
-      <!-- Extremely Dense, Realistic Floral Cluster (No giant blobs!) -->
-      <g id="dense-cluster">
-        <!-- Background soft petals to fill gaps -->
-        <circle cx="0" cy="0" r="25" fill="#ffb7c5" opacity="0.8"/>
-        <!-- 20 normal-sized flowers packed together -->
-        <use href="#sakura-flower" x="-15" y="-10" transform="scale(1.2) rotate(15)"/>
-        <use href="#sakura-flower" x="10" y="-20" transform="scale(1.1) rotate(-35)"/>
-        <use href="#sakura-flower" x="20" y="5" transform="scale(1.3) rotate(80)"/>
-        <use href="#sakura-flower" x="-5" y="20" transform="scale(1.2) rotate(-60)"/>
-        <use href="#sakura-flower" x="-20" y="15" transform="scale(1) rotate(110)"/>
-        <use href="#sakura-flower" x="5" y="0" transform="scale(1.4) rotate(45)"/>
-        <use href="#sakura-flower" x="0" y="-10" transform="scale(1) rotate(15)"/>
-        <use href="#sakura-flower" x="15" y="20" transform="scale(1.1) rotate(90)"/>
-        <use href="#sakura-flower" x="-10" y="-25" transform="scale(1.2) rotate(20)"/>
-        <use href="#sakura-flower" x="5" y="10" transform="scale(1.3) rotate(-20)"/>
-        <use href="#sakura-flower" x="-25" y="-5" transform="scale(1) rotate(-75)"/>
-        <use href="#sakura-flower" x="25" y="-10" transform="scale(1.1) rotate(105)"/>
-        <!-- Buds at edges -->
-        <use href="#sakura-bud" x="-30" y="0" transform="scale(1.2) rotate(-90)"/>
-        <use href="#sakura-bud" x="30" y="15" transform="scale(1.2) rotate(45)"/>
-        <use href="#sakura-bud" x="10" y="30" transform="scale(1.2) rotate(160)"/>
+      <!-- Delicate Sakura Branch Cluster -->
+      <g id="night-cluster">
+        <circle cx="0" cy="0" r="18" fill="#ff7fa6" opacity="0.3" filter="blur(6px)"/>
+        <use href="#night-sakura" x="-10" y="-8" transform="scale(1.1) rotate(12)"/>
+        <use href="#night-sakura" x="8" y="-12" transform="scale(0.95) rotate(-28)"/>
+        <use href="#night-sakura" x="14" y="6" transform="scale(1.15) rotate(70)"/>
+        <use href="#night-sakura" x="-4" y="14" transform="scale(1.05) rotate(-45)"/>
+        <use href="#night-sakura" x="0" y="0" transform="scale(1.2) rotate(35)"/>
       </g>
 
-      <!-- Premium Mountain Silhouette -->
-      <clipPath id="fuji-clip">
-        <!-- Smooth, majestic exponential curve -->
+      <!-- Fuji Cut -->
+      <clipPath id="fuji-clip-n">
         <path d="M -200,800 C 500,750 900,450 1430,250 Q 1500,255 1570,250 C 2100,450 2500,750 3200,800 Z"/>
       </clipPath>
-      
-      <g id="mountain-base">
-        <!-- Mountain Body -->
-        <path fill="url(#fuji-grad)" d="M -200,800 C 500,750 900,450 1430,250 Q 1500,255 1570,250 C 2100,450 2500,750 3200,800 Z"/>
-        <!-- Snowcap (Organic, deeply dripping snow) -->
-        <path fill="url(#snow-grad)" clip-path="url(#fuji-clip)" d="M 1000,500 
-          C 1150,450 1200,320 1250,420 
-          C 1300,520 1350,280 1400,450 
-          C 1450,620 1500,280 1550,420 
-          C 1600,560 1650,300 1700,450 
-          C 1750,600 1850,400 2000,500 
-          L 2000,0 L 1000,0 Z"/>
-      </g>
     </defs>
 
     <!-- 1. Sky -->
-    <rect width="1920" height="1080" fill="url(#sky)"/>
-    
-    <!-- Glowing Sunrise Aura behind mountain -->
-    <circle cx="1600" cy="300" r="400" fill="#fcd7a1" opacity="0.4" filter="blur(40px)"/>
+    <rect width="1920" height="1080" fill="url(#kyoto-night)"/>
 
-    <!-- 2. Mountain (Centered, slightly lower) -->
-    <g transform="translate(-540, 100)">
-      <use href="#mountain-base"/>
+    <!-- 2. Stars -->
+    <g fill="#f1e8ff">
+      <circle cx="120" cy="90" r="1" opacity="0.7"/>
+      <circle cx="280" cy="160" r="1.4" class="twinkle-star" style="animation-delay:0.5s"/>
+      <circle cx="450" cy="80" r="1" opacity="0.5"/>
+      <circle cx="620" cy="140" r="1.6" class="twinkle-star" style="animation-delay:1.8s"/>
+      <circle cx="780" cy="70" r="0.9" opacity="0.8"/>
+      <circle cx="920" cy="120" r="1.3" class="twinkle-star" style="animation-delay:0.9s"/>
+      <circle cx="1100" cy="60" r="1" opacity="0.6"/>
+      <circle cx="1320" cy="110" r="1.5" class="twinkle-star" style="animation-delay:2.3s"/>
+      <circle cx="1650" cy="90" r="1.1" opacity="0.75"/>
+      <circle cx="1780" cy="180" r="1.4" class="twinkle-star" style="animation-delay:1.2s"/>
+      <circle cx="200" cy="280" r="0.8" opacity="0.4"/>
+      <circle cx="530" cy="240" r="1.2" opacity="0.6"/>
+      <circle cx="860" cy="270" r="1.5" class="twinkle-star" style="animation-delay:3.1s"/>
+      <circle cx="1220" cy="220" r="1" opacity="0.5"/>
+      <circle cx="1720" cy="300" r="1.3" class="twinkle-star" style="animation-delay:2.7s"/>
     </g>
 
-    <!-- 3. Thick Lake Fog at Base -->
-    <rect x="0" y="680" width="1920" height="120" fill="url(#fog-1)"/>
-    <path fill="url(#fog-2)" opacity="0.8" d="M 0,720 Q 200,690 400,730 T 800,710 T 1200,740 T 1600,710 T 1920,730 L 1920,800 L 0,800 Z"/>
-    
-    <!-- 4. Lake Water Base -->
-    <rect x="0" y="800" width="1920" height="280" fill="url(#water)"/>
-    
-    <!-- 5. Reflection in Lake -->
-    <!-- Translate logic: Mountain peak is at Y=250 + 100(translate) = 350. Water is at 800. Mirror line = 800. -->
-    <g transform="translate(-540, 1500) scale(1, -1)" opacity="0.3">
-      <use href="#mountain-base"/>
+    <!-- 3. Full Moon (Grande Lune de Kyoto) -->
+    <g transform="translate(1380, 200)">
+      <!-- Giant soft halo -->
+      <circle cx="0" cy="0" r="260" fill="url(#moon-halo)"/>
+      <!-- Inner moon disc -->
+      <circle cx="0" cy="0" r="92" fill="url(#moon-glow)"/>
+      <!-- Craters / Maria -->
+      <ellipse cx="-24" cy="-16" rx="20" ry="14" fill="#d9c2f0" opacity="0.4" transform="rotate(-15)"/>
+      <ellipse cx="28" cy="22" rx="26" ry="18" fill="#d2b8eb" opacity="0.35" transform="rotate(25)"/>
+      <circle cx="-10" cy="32" r="16" fill="#cbb0e6" opacity="0.3"/>
+      <!-- Drifting Ukiyo-e night clouds over the moon -->
+      <path class="moon-cloud" fill="#140c26" opacity="0.55" d="M -180,10 C -120,40 -60,-20 20,10 C 80,-30 140,20 220,-5 C 180,25 100,5 40,30 C -30,10 -100,35 -180,10 Z"/>
+      <path class="moon-cloud" style="animation-delay:-15s" fill="#201138" opacity="0.45" d="M -140,-40 C -80,-15 -20,-60 60,-35 C 120,-65 170,-20 240,-45 C 190,-10 130,-30 70,-10 C 0,-30 -70,-5 -140,-40 Z"/>
     </g>
 
-    <!-- 6. Water Ripples (Smooths reflection) -->
-    <rect x="0" y="800" width="1920" height="1" fill="#fff" opacity="0.4"/>
-    <rect x="0" y="820" width="1920" height="2" fill="#fff" opacity="0.3"/>
-    <rect x="0" y="850" width="1920" height="3" fill="#fff" opacity="0.2"/>
-    <rect x="0" y="890" width="1920" height="4" fill="#fff" opacity="0.15"/>
-    <rect x="0" y="940" width="1920" height="6" fill="#fff" opacity="0.1"/>
-    <rect x="0" y="1000" width="1920" height="10" fill="#fff" opacity="0.05"/>
-
-    <!-- 7. Premium Sakura Canopy (Top Left) -->
-    <g transform="translate(-50, -50)">
-      <!-- Elegant curved wood branches -->
-      <g fill="none" stroke="#251a14" stroke-linecap="round">
-        <path d="M 0,0 Q 200,50 350,250" stroke-width="12"/>
-        <path d="M 150,40 Q 300,100 450,150" stroke-width="10"/>
-        <path d="M 250,150 Q 300,300 280,450" stroke-width="8"/>
-        <path d="M 350,250 Q 450,350 550,300" stroke-width="6"/>
-      </g>
-      <!-- Massively detailed clusters attached to branches -->
-      <use href="#dense-cluster" x="150" y="40" transform="scale(1.5)"/>
-      <use href="#dense-cluster" x="250" y="80" transform="scale(1.8)"/>
-      <use href="#dense-cluster" x="350" y="150" transform="scale(1.6)"/>
-      <use href="#dense-cluster" x="450" y="150" transform="scale(1.4)"/>
-      <use href="#dense-cluster" x="300" y="250" transform="scale(1.7)"/>
-      <use href="#dense-cluster" x="280" y="350" transform="scale(1.5)"/>
-      <use href="#dense-cluster" x="280" y="450" transform="scale(1.3)"/>
-      <use href="#dense-cluster" x="400" y="250" transform="scale(1.4)"/>
-      <use href="#dense-cluster" x="500" y="300" transform="scale(1.2)"/>
-      <!-- Background fillers -->
-      <use href="#dense-cluster" x="100" y="150" transform="scale(2)"/>
-      <use href="#dense-cluster" x="200" y="200" transform="scale(2.2)"/>
-      <use href="#dense-cluster" x="100" y="250" transform="scale(1.8)"/>
+    <!-- 4. Mount Fuji Night Silhouette -->
+    <g transform="translate(-540, 120)">
+      <!-- Mountain Body -->
+      <path fill="url(#fuji-night)" d="M -200,800 C 500,750 900,450 1430,250 Q 1500,255 1570,250 C 2100,450 2500,750 3200,800 Z"/>
+      <!-- Moonlit Snowcap -->
+      <path fill="url(#snow-night)" clip-path="url(#fuji-clip-n)" d="M 1000,500 
+        C 1150,450 1200,320 1250,420 
+        C 1300,520 1350,280 1400,450 
+        C 1450,620 1500,280 1550,420 
+        C 1600,560 1650,300 1700,450 
+        C 1750,600 1850,400 2000,500 
+        L 2000,0 L 1000,0 Z"/>
     </g>
 
-    <!-- Premium Sakura Canopy (Top Right) -->
-    <g transform="translate(1970, -50) scale(-1, 1)">
-      <g fill="none" stroke="#251a14" stroke-linecap="round">
-        <path d="M 0,0 Q 200,80 400,200" stroke-width="14"/>
-        <path d="M 200,80 Q 350,180 320,350" stroke-width="10"/>
-        <path d="M 350,160 Q 500,200 650,150" stroke-width="8"/>
-        <path d="M 400,200 Q 500,300 450,450" stroke-width="6"/>
-      </g>
-      <!-- Massively detailed clusters -->
-      <use href="#dense-cluster" x="150" y="50" transform="scale(1.8)"/>
-      <use href="#dense-cluster" x="250" y="100" transform="scale(1.9)"/>
-      <use href="#dense-cluster" x="350" y="160" transform="scale(1.7)"/>
-      <use href="#dense-cluster" x="450" y="200" transform="scale(1.5)"/>
-      <use href="#dense-cluster" x="320" y="250" transform="scale(1.6)"/>
-      <use href="#dense-cluster" x="320" y="350" transform="scale(1.4)"/>
-      <use href="#dense-cluster" x="550" y="150" transform="scale(1.6)"/>
-      <use href="#dense-cluster" x="650" y="150" transform="scale(1.3)"/>
-      <use href="#dense-cluster" x="420" y="300" transform="scale(1.5)"/>
-      <use href="#dense-cluster" x="450" y="400" transform="scale(1.2)"/>
-      <use href="#dense-cluster" x="450" y="450" transform="scale(1)"/>
-      <!-- Fillers -->
-      <use href="#dense-cluster" x="100" y="200" transform="scale(2.3)"/>
-      <use href="#dense-cluster" x="200" y="280" transform="scale(2)"/>
+    <!-- 5. Lake Waters & Silver Moonlight Beam -->
+    <rect x="0" y="800" width="1920" height="280" fill="url(#night-lake)"/>
+    <!-- Moon beam shimmering on water -->
+    <g opacity="0.45">
+      <ellipse cx="840" cy="820" rx="140" ry="3" fill="#ecd9ff"/>
+      <ellipse cx="840" cy="850" rx="180" ry="5" fill="#dfc4fc"/>
+      <ellipse cx="840" cy="890" rx="220" ry="7" fill="#d2aef7"/>
+      <ellipse cx="840" cy="950" rx="280" ry="10" fill="#b98aee"/>
+      <ellipse cx="840" cy="1020" rx="340" ry="14" fill="#9f66e0"/>
+    </g>
+
+    <!-- 6. Delicate, Graceful Night Sakura Framing (Top Left & Top Right) -->
+    <g transform="translate(-30, -30)">
+      <path d="M 0,0 Q 180,40 280,180" stroke="#160e1f" stroke-width="8" fill="none" stroke-linecap="round"/>
+      <path d="M 140,30 Q 240,70 340,110" stroke="#160e1f" stroke-width="6" fill="none" stroke-linecap="round"/>
+      <use href="#night-cluster" x="140" y="30" transform="scale(1.3)"/>
+      <use href="#night-cluster" x="220" y="60" transform="scale(1.4)"/>
+      <use href="#night-cluster" x="280" y="140" transform="scale(1.2)"/>
+      <use href="#night-cluster" x="340" y="110" transform="scale(1.1)"/>
+    </g>
+
+    <g transform="translate(1950, -30) scale(-1, 1)">
+      <path d="M 0,0 Q 160,50 260,160" stroke="#160e1f" stroke-width="8" fill="none" stroke-linecap="round"/>
+      <path d="M 120,40 Q 220,80 300,120" stroke="#160e1f" stroke-width="5" fill="none" stroke-linecap="round"/>
+      <use href="#night-cluster" x="120" y="40" transform="scale(1.25)"/>
+      <use href="#night-cluster" x="200" y="70" transform="scale(1.35)"/>
+      <use href="#night-cluster" x="260" y="130" transform="scale(1.15)"/>
+      <use href="#night-cluster" x="300" y="120" transform="scale(1)"/>
     </g>
   </svg>
 
