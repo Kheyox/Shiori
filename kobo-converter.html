@@ -1055,7 +1055,8 @@ document.querySelectorAll("input[type=range][data-key]").forEach(i=>i.addEventLi
 /* ---------- Noms & séries ---------- */
 // parseName(raw) → { series, tome, episode } (voir plus haut)
 function autoName(raw){
-  const {series,tome}=parseName(raw);
+  let {series,tome}=parseName(raw);
+  series=series.replace(/[._]+/g," ").replace(/s+/g," ").trim();
   if(tome==null) return series||raw;
   const word=S.kind==="webtoon"?"Chapitre":"Tome";
   return `${series} - ${word} ${String(tome).padStart(S.kind==="webtoon"?3:2,"0")}`;
@@ -1387,7 +1388,7 @@ async function renderPreview(){
    à la taille exacte de l'écran, en coupant de préférence dans les zones vides. */
 async function buildWebtoonPlan(v,o,getBlob,progress){
   const q=2, PW=24;
-  const imgs=[], uniA=[], lumA=[];
+  const imgs=[], uniA=[], lumA=[], rA=[], gA=[], bA=[], detA=[];
   let W=0, y0=0, r0=0, failed=0;
   for(let i=0;i<v.count;i++){
     let bmp; try{ bmp=await createImageBitmap(await getBlob(i)); }catch(e){ failed++; continue; }
@@ -1397,9 +1398,10 @@ async function buildWebtoonPlan(v,o,getBlob,progress){
     cx.drawImage(bmp,0,0,PW,rows);
     const d=cx.getImageData(0,0,PW,rows).data;
     for(let y=0;y<rows;y++){
-      let mn=255,mx=0,sum=0;
-      for(let x=0;x<PW;x++){ const p=(y*PW+x)*4; const l=d[p]*0.299+d[p+1]*0.587+d[p+2]*0.114; if(l<mn)mn=l; if(l>mx)mx=l; sum+=l; }
-      uniA.push((mx-mn)<26?1:0); lumA.push(sum/PW);
+      let mn=255,mx=0,sum=0,sr=0,sg=0,sb=0;
+      for(let x=0;x<PW;x++){ const p=(y*PW+x)*4; const l=d[p]*0.299+d[p+1]*0.587+d[p+2]*0.114; if(l<mn)mn=l; if(l>mx)mx=l; sum+=l; sr+=d[p]; sg+=d[p+1]; sb+=d[p+2]; }
+      uniA.push((mx-mn)<26?1:0); lumA.push(sum/PW); detA.push(mx-mn);
+      rA.push(sr/PW); gA.push(sg/PW); bA.push(sb/PW);
     }
     imgs.push({i,k,hs,y0,r0,rows,w:bmp.width,h:bmp.height});
     y0+=hs; r0+=rows;
@@ -1416,18 +1418,24 @@ async function buildWebtoonPlan(v,o,getBlob,progress){
   const findY=y=>{ let lo=0,hi=imgs.length-1; while(lo<hi){ const m=(lo+hi+1)>>1; if(imgs[m].y0<=y) lo=m; else hi=m-1; } return imgs[lo]; };
   const toRow=y=>{ const m=findY(y); return Math.min(PH-1,Math.max(0,Math.round(m.r0+(y-m.y0)*m.rows/m.hs))); };
 
-  const uL=[]; for(let p=0;p<PH;p++) if(uni[p]) uL.push(lm[p]);
-  uL.sort((a,b)=>a-b);
-  const bgL=uL.length?uL[Math.floor(uL.length/2)]:255;
-  const bg=bgL>128?"#ffffff":"#000000";
+  // Fond = couleur uniforme la plus fréquente (blanc, gris, noir…). Une ligne n'est un
+  // « vide » que si elle est uniforme ET de cette couleur : une zone d'aplat colorée
+  // dans un dessin (ciel, mur…) n'est plus prise pour du vide et donc jamais supprimée.
+  const bins=new Map();
+  for(let p=0;p<PH;p++) if(uni[p]){ const key=(rA[p]>>5)*64+(gA[p]>>5)*8+(bA[p]>>5); const e=bins.get(key)||{n:0,r:0,g:0,b:0}; e.n++; e.r+=rA[p]; e.g+=gA[p]; e.b+=bA[p]; bins.set(key,e); }
+  let bestBin=null; for(const e of bins.values()) if(!bestBin||e.n>bestBin.n) bestBin=e;
+  const bgc=bestBin?[bestBin.r/bestBin.n,bestBin.g/bestBin.n,bestBin.b/bestBin.n]:[255,255,255];
+  const bg=`rgb(${Math.round(bgc[0])},${Math.round(bgc[1])},${Math.round(bgc[2])})`;
+  const gap=new Uint8Array(PH);
+  for(let p=0;p<PH;p++) gap[p]=(uni[p] && Math.abs(rA[p]-bgc[0])<34 && Math.abs(gA[p]-bgc[1])<34 && Math.abs(bA[p]-bgc[2])<34)?1:0;
   const mergeGap=Math.max(2,Math.round(pageH*0.04/q));
   const blocks=[]; let p=0;
   while(p<PH){
-    while(p<PH&&uni[p])p++;
+    while(p<PH&&gap[p])p++;
     if(p>=PH)break;
-    let e=p,gap=0;
-    while(e<PH){ if(uni[e]){ gap++; if(gap>mergeGap)break; } else gap=0; e++; }
-    blocks.push({a:p,b:e-gap}); p=e;
+    let e=p,run=0;
+    while(e<PH){ if(gap[e]){ run++; if(run>mergeGap)break; } else run=0; e++; }
+    blocks.push({a:p,b:e-run}); p=e;
   }
   if(!blocks.length) blocks.push({a:0,b:PH});
   const pad=Math.max(1,Math.round(mergeGap/2));
@@ -1439,7 +1447,7 @@ async function buildWebtoonPlan(v,o,getBlob,progress){
   const bestCut=(lo,hi)=>{
     let best=hi, bs=-1;
     for(let yy=Math.ceil(lo); yy<=hi; yy+=q){
-      const r=toRow(yy), sc=uni[r]?2:1/(1+Math.abs(lm[r]-bgL)/24);
+      const r=toRow(yy), sc=(gap[r]?3:uni[r]?1.5:1/(1+detA[r]/20))+(yy-lo)/(hi-lo+1)*0.2;
       if(sc>=bs){ bs=sc; best=yy; }
     }
     return best;
@@ -1450,7 +1458,7 @@ async function buildWebtoonPlan(v,o,getBlob,progress){
     while(sg.y1-a>1e-6){
       const H=sg.y1-a, gapUse=cur.length?gapW:0, avail=pageH-used-gapUse;
       if(H<=avail){ cur.push({y0:a,y1:sg.y1}); used+=gapUse+H; a=sg.y1; break; }
-      if(cur.length && (avail<0.15*pageH || (H<=pageH && avail<0.35*pageH))){ pages.push(cur); cur=[]; used=0; continue; }
+      if(cur.length && (avail<0.15*pageH || (H<=pageH && avail<0.25*pageH))){ pages.push(cur); cur=[]; used=0; continue; }
       const cut=bestCut(Math.max(a+q,a+avail*0.7), a+avail);
       cur.push({y0:a,y1:cut}); pages.push(cur); cur=[]; used=0; a=cut;
     }
