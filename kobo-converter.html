@@ -1185,10 +1185,10 @@ const tag=(f,src,path)=>{
   try{ Object.defineProperty(f,"_src",{value:src}); if(path) Object.defineProperty(f,"_path",{value:path}); }catch(e){}
   return f;
 };
-async function walkDir(dh,prefix,out,depth=0){
+async function walkDir(dh,prefix,out,depth=0,root=dh){
   for await (const [name,h] of dh.entries()){
-    if(h.kind==="file"){ try{ out.push(tag(await h.getFile(),{dir:dh,name,handle:h},prefix+name)); }catch(e){} }
-    else if(h.kind==="directory" && depth<3) await walkDir(h,prefix+name+"/",out,depth+1);
+    if(h.kind==="file"){ try{ out.push(tag(await h.getFile(),{dir:dh,name,handle:h,root},prefix+name)); }catch(e){} }
+    else if(h.kind==="directory" && depth<3) await walkDir(h,prefix+name+"/",out,depth+1,root);
   }
 }
 async function filesFromDrop(dt){
@@ -1702,6 +1702,36 @@ function offerCleanup(list,label,someUnknown){
     box.innerHTML=`<b>${ok} fichier${ok>1?"s":""} supprimé${ok>1?"s":""}.</b>`+(ko?` <span style="color:var(--warn)">${ko} n'ont pas pu l'être.</span>`:"");
   };
   box.append(msg,b);
+
+  // Dossier d'origine : proposé seulement si TOUS les tomes qu'il contenait sont bien convertis et envoyés
+  const inList=new Set(list), roots=new Map();
+  for(const v of vols) for(const sr of (v.src||[])) if(sr.root){
+    const e=roots.get(sr.root)||{ok:true,n:0}; if(!inList.has(v)) e.ok=false; else e.n++; roots.set(sr.root,e);
+  }
+  const countFiles=async dh=>{ let c=0; for await (const [,h] of dh.entries()){ c+= h.kind==="file"?1:await countFiles(h); } return c; };
+  for(const [root,e] of roots){
+    if(!e.ok) continue;
+    const fb=document.createElement("button"); fb.className="secondary"; fb.type="button";
+    fb.textContent=`Supprimer le dossier « ${root.name} » en entier`;
+    fb.onclick=async()=>{
+      let total=0; try{ total=await countFiles(root); }catch(err){}
+      const others=Math.max(0,total-n);
+      if(!confirm(`Supprimer DÉFINITIVEMENT le dossier « ${root.name} » et tout son contenu ?\n\n`+
+        `• ${n} fichier(s) convertis (déjà dans ${label})\n`+
+        (others?`• ${others} AUTRE(S) fichier(s) non convertis, qui seront aussi perdus\n`:"")+
+        "\nPas de corbeille.")) return;
+      fb.disabled=true; b.disabled=true;
+      try{
+        if(root.requestPermission && await root.requestPermission({mode:"readwrite"})!=="granted") throw new Error("permission refusée");
+        if(root.remove){ await root.remove({recursive:true}); box.innerHTML=`<b>Dossier « ${root.name} » supprimé.</b>`; }
+        else{
+          for await (const [name] of root.entries()) await root.removeEntry(name,{recursive:true});
+          box.innerHTML=`<b>Contenu de « ${root.name} » supprimé.</b> Le dossier vide reste à supprimer à la main (le navigateur ne peut pas le retirer lui-même).`;
+        }
+      }catch(err){ console.error("suppression dossier",err); fb.disabled=false; b.disabled=false; toast("Suppression impossible : "+err.message); }
+    };
+    box.appendChild(fb);
+  }
   $("after").appendChild(box);
 }
 
