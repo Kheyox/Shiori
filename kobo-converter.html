@@ -17,6 +17,7 @@
 <meta name="apple-mobile-web-app-title" content="Shiori">
 <meta name="mobile-web-app-capable" content="yes">
 
+<script src="https://accounts.google.com/gsi/client" async defer></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <style>
   :root{
@@ -177,6 +178,23 @@
   .secondary{margin-top:10px;width:100%;padding:11px;border-radius:12px;border:1px solid var(--line-2);background:var(--card);font-weight:600;font-size:14px}
   .secondary:hover{background:var(--card-2)}
 
+  .dest{margin-bottom:12px}
+  .dest .lab{display:block;font-size:12px;letter-spacing:.09em;text-transform:uppercase;color:var(--muted);font-weight:600;margin-bottom:8px}
+  .modal-bg{position:fixed;inset:0;background:rgba(5,4,10,.72);backdrop-filter:blur(6px);z-index:60;display:grid;place-items:center;padding:16px}
+  .modal{width:100%;max-width:520px;max-height:82vh;display:flex;flex-direction:column;background:#18141f;border:1px solid var(--line-2);border-radius:18px;box-shadow:0 30px 80px rgba(0,0,0,.7);overflow:hidden}
+  .modal header{margin:0;padding:16px 18px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:10px;font-weight:600}
+  .modal header button{margin-left:auto;background:none;border:0;color:var(--muted);font-size:18px}
+  .crumbs{padding:10px 18px;font-size:12.5px;color:var(--muted);display:flex;gap:6px;flex-wrap:wrap;border-bottom:1px solid var(--line)}
+  .crumbs a{color:var(--accent-2);cursor:pointer}
+  .crumbs a:last-child{color:var(--text);font-weight:600;cursor:default}
+  .flist{flex:1;overflow:auto;min-height:220px;padding:6px 0}
+  .fitem{display:flex;gap:10px;align-items:center;width:100%;text-align:left;border:0;background:none;padding:10px 18px;font-size:14px}
+  .fitem:hover{background:var(--card-2)}
+  .fmsg{padding:28px 18px;text-align:center;color:var(--faint);font-size:13.5px}
+  .mfoot{padding:14px 18px;border-top:1px solid var(--line);display:flex;gap:10px;align-items:center}
+  .mfoot .ghost{background:none;border:1px solid var(--line-2);border-radius:10px;padding:9px 14px;font-size:13.5px;color:var(--muted)}
+  .mfoot .ghost:hover{color:var(--text)}
+  .mfoot .pick{margin-left:auto;border:0;border-radius:10px;padding:10px 16px;font-weight:700;font-size:13.5px;color:var(--accent-ink);background:linear-gradient(135deg,var(--accent-2),var(--accent))}
   footer{margin-top:48px;text-align:center;color:var(--faint);font-size:12.5px}
   .toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);background:#241e30;border:1px solid var(--line-2);color:var(--text);
     padding:11px 18px;border-radius:12px;font-size:14px;box-shadow:0 10px 40px rgba(0,0,0,.5);z-index:50;max-width:90vw}
@@ -296,6 +314,14 @@
       </details>
 
       <div>
+        <div class="dest">
+          <span class="lab">Enregistrer dans</span>
+          <div class="seg" data-key="dest" role="group" aria-label="Destination">
+            <button type="button" data-val="dir" id="dest-dir">Un dossier</button>
+            <button type="button" data-val="drive">Google Drive</button>
+            <button type="button" data-val="dl">Téléchargements</button>
+          </div>
+        </div>
         <button class="go" id="convert" type="button">Convertir</button>
         <p class="sub-go" id="sub-go"></p>
         <div class="prog hidden" id="prog">
@@ -964,7 +990,7 @@ function toast(msg,ms=3800){
 }
 
 /* ---------- Réglages (mémorisés) ---------- */
-const DEFAULTS={color:"auto", rtl:"1", spread:"rotate", rotdir:"cw", format:"kepub", device:"1264x1680",
+const DEFAULTS={dest:"dir", color:"auto", rtl:"1", spread:"rotate", rotdir:"cw", format:"kepub", device:"1264x1680",
   quality:92, trim:true, sharpen:true, meta:true};
 const LS_KEY="shiori_v2_settings";
 let S={...DEFAULTS};
@@ -1209,9 +1235,10 @@ function renderVols(){
 }
 function updateSubGo(){
   const pages=vols.reduce((s,v)=>s+v.count,0);
-  const hasPicker=!!window.showDirectoryPicker;
   $("convert").textContent=vols.length>1?`Convertir ${vols.length} tomes`:"Convertir";
-  $("sub-go").textContent = hasPicker ? "Tu choisiras le dossier de destination (ex. ta Kobo)." : `${pages} pages · les fichiers seront téléchargés.`;
+    $("sub-go").textContent = S.dest==="drive" ? "Tu te connectes à Google puis tu choisis le dossier Drive."
+    : S.dest==="dir" ? "Tu choisiras le dossier de destination (ex. ta Kobo)."
+    : `${pages} pages · les fichiers seront téléchargés.`;
 }
 
 /* ---------- Aperçu ---------- */
@@ -1301,15 +1328,126 @@ function downloadBlob(blob,name){
   setTimeout(()=>URL.revokeObjectURL(a.href),20000);
 }
 
+/* ---------- Google Drive ---------- */
+const GOOGLE_CLIENT_ID="860973090121-b9qm6fubhm12su6agl9v09e7suvcfmrt.apps.googleusercontent.com";
+const DRIVE_SCOPE="https://www.googleapis.com/auth/drive";
+const CLIENT_ID_RE=/\.apps\.googleusercontent\.com$/;
+let driveToken=null, driveTokenClient=null;
+const driveClientId=()=>{ const v=GOOGLE_CLIENT_ID||localStorage.getItem("shiori_gclient")||""; return CLIENT_ID_RE.test(v)?v:""; };
+
+function getDriveToken(){
+  return new Promise((resolve,reject)=>{
+    if(!(window.google&&google.accounts&&google.accounts.oauth2)) return reject(new Error("service Google non chargé (hors-ligne ?)"));
+    if(!driveTokenClient) driveTokenClient=google.accounts.oauth2.initTokenClient({client_id:driveClientId(), scope:DRIVE_SCOPE, callback:()=>{}});
+    driveTokenClient.callback=r=>{ if(r&&r.access_token){ driveToken=r.access_token; resolve(driveToken); } else reject(new Error("connexion refusée")); };
+    driveTokenClient.requestAccessToken({prompt:driveToken?"":"select_account"});
+  });
+}
+async function ensureDriveAuth(){
+  if(!driveClientId()){
+    const cid=(prompt("Colle ton ID client OAuth Google (finit par .apps.googleusercontent.com)")||"").trim();
+    if(!CLIENT_ID_RE.test(cid)){ if(cid) toast("Ça ne ressemble pas à un ID client OAuth."); return false; }
+    try{ localStorage.setItem("shiori_gclient",cid); }catch(e){}
+  }
+  try{ await getDriveToken(); return true; }
+  catch(e){ toast("Connexion Google Drive : "+e.message); return false; }
+}
+// fetch Drive avec renouvellement du jeton si expiré
+async function driveFetch(url,init={},retried){
+  const r=await fetch(url,{...init,headers:{...(init.headers||{}),Authorization:"Bearer "+driveToken}});
+  if(r.status===401 && !retried){ await getDriveToken(); return driveFetch(url,init,true); }
+  return r;
+}
+async function driveFolders(parentId){
+  const q=encodeURIComponent(`'${parentId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`);
+  const r=await driveFetch(`https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id,name)&orderBy=name&pageSize=1000`);
+  if(!r.ok) throw new Error("Drive "+r.status);
+  return (await r.json()).files||[];
+}
+async function driveCreateFolder(name,parentId){
+  const r=await driveFetch("https://www.googleapis.com/drive/v3/files",{method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({name,mimeType:"application/vnd.google-apps.folder",parents:[parentId]})});
+  if(!r.ok) throw new Error("Drive "+r.status);
+  return r.json();
+}
+async function makeDriveSink(folder){
+  const present=new Set(); let tok="";
+  do{
+    const q=encodeURIComponent(`'${folder.id}' in parents and trashed=false`);
+    const r=await driveFetch(`https://www.googleapis.com/drive/v3/files?q=${q}&fields=nextPageToken,files(name)&pageSize=1000`+(tok?"&pageToken="+encodeURIComponent(tok):""));
+    if(!r.ok) throw new Error("Drive "+r.status);
+    const j=await r.json(); (j.files||[]).forEach(f=>present.add(f.name)); tok=j.nextPageToken||"";
+  }while(tok);
+  return {
+    label:"Drive / "+folder.name,
+    exists:name=>present.has(name),
+    write:async(name,blob)=>{
+      const meta={name,mimeType:name.endsWith(".epub")?"application/epub+zip":"application/x-cbz",parents:[folder.id]};
+      const form=new FormData();
+      form.append("metadata",new Blob([JSON.stringify(meta)],{type:"application/json"}));
+      form.append("file",blob,name);
+      const r=await driveFetch("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart",{method:"POST",body:form});
+      if(!r.ok) throw new Error("envoi Drive "+r.status);
+    }
+  };
+}
+// Sélecteur de dossier Drive (navigation + création de dossier)
+function pickDriveFolder(){
+  return new Promise(resolve=>{
+    const path=[{id:"root",name:"Mon Drive"}];
+    const bg=document.createElement("div"); bg.className="modal-bg";
+    const m=document.createElement("div"); m.className="modal"; m.setAttribute("role","dialog"); m.setAttribute("aria-label","Choisir un dossier Google Drive");
+    m.innerHTML='<header><span>Choisis un dossier Google Drive</span><button type="button" aria-label="Fermer">✕</button></header>'+
+      '<div class="crumbs"></div><div class="flist"></div>'+
+      '<div class="mfoot"><button class="ghost" type="button" id="mk">+ Nouveau dossier</button><button class="pick" type="button"></button></div>';
+    bg.appendChild(m); document.body.appendChild(bg);
+    const crumbs=m.querySelector(".crumbs"), list=m.querySelector(".flist"), pick=m.querySelector(".pick");
+    const finish=v=>{ bg.remove(); resolve(v); };
+    m.querySelector("header button").onclick=()=>finish(null);
+    bg.addEventListener("click",e=>{ if(e.target===bg) finish(null); });
+    const cur=()=>path[path.length-1];
+    pick.onclick=()=>finish(cur());
+    m.querySelector("#mk").onclick=async()=>{
+      const n=(prompt("Nom du nouveau dossier")||"").trim(); if(!n) return;
+      try{ const f=await driveCreateFolder(n,cur().id); path.push({id:f.id,name:f.name||n}); load(); }catch(e){ toast("Création impossible : "+e.message); }
+    };
+    async function load(){
+      pick.textContent="Choisir « "+cur().name+" »";
+      crumbs.innerHTML="";
+      path.forEach((p,i)=>{
+        if(i) crumbs.append("›");
+        const a=document.createElement("a"); a.textContent=p.name;
+        if(i<path.length-1) a.onclick=()=>{ path.splice(i+1); load(); };
+        crumbs.appendChild(a);
+      });
+      list.innerHTML='<div class="fmsg">Chargement…</div>';
+      try{
+        const fs=await driveFolders(cur().id);
+        list.innerHTML="";
+        if(!fs.length) list.innerHTML='<div class="fmsg">Aucun sous-dossier ici.</div>';
+        fs.forEach(f=>{
+          const b=document.createElement("button"); b.type="button"; b.className="fitem"; b.textContent="📁  "+f.name;
+          b.onclick=()=>{ path.push(f); load(); }; list.appendChild(b);
+        });
+      }catch(e){ list.innerHTML='<div class="fmsg">Erreur : '+e.message+'</div>'; }
+    }
+    load();
+  });
+}
+
 /* ---------- Conversion ---------- */
 let converting=false, outputs=[], wakeLock=null;
 
 async function runConvert(){
   if(converting||!vols.length) return;
-  let dir=null;
-  if(window.showDirectoryPicker){
-    dir=await pickDir();
-    if(!dir){ return; }   // annulé
+  let sink=null;
+  if(S.dest==="drive"){
+    if(!await ensureDriveAuth()) return;
+    const f=await pickDriveFolder(); if(!f) return;
+    try{ sink=await makeDriveSink(f); }catch(e){ toast("Dossier Drive illisible : "+e.message); return; }
+  }else if(S.dest==="dir" && window.showDirectoryPicker){
+    const d=await pickDir(); if(!d) return;
+    sink={label:d.name, write:(n,b)=>writeToDir(d,n,b)};
   }
   converting=true; outputs=[];
   try{ wakeLock=navigator.wakeLock?await navigator.wakeLock.request("screen"):null; }catch(e){}
@@ -1334,6 +1472,10 @@ async function runConvert(){
     used.add(base.toLowerCase());
     const filename=base+ext;
     txt.textContent=`Tome ${j+1}/${vols.length} · ${v.name}`;
+    if(sink && sink.exists && sink.exists(filename)){   // reprise : déjà sur place
+      done+=v.count; fill.style.width=Math.round(done/total*100)+"%";
+      addResult(filename,null,v.count,"déjà présent — ignoré"); continue;
+    }
 
     let zip=null, rar=null;
     try{
@@ -1379,8 +1521,8 @@ async function runConvert(){
       mimeType:S.format==="kepub"?"application/epub+zip":"application/x-cbz"});
     stats.outBytes+=file.size;
 
-    if(dir){
-      try{ await writeToDir(dir,filename,file); addResult(filename,null,images.length,"enregistré dans "+dir.name); }
+    if(sink){
+      try{ await sink.write(filename,file); addResult(filename,null,images.length,"enregistré dans "+sink.label); }
       catch(e){ addResult(filename,null,images.length,"écriture impossible : "+e.message); }
     }else{
       outputs.push({filename,blob:file});
@@ -1398,7 +1540,7 @@ async function runConvert(){
     ` · ${fmtMB(stats.inBytes)} → <b>${fmtMB(stats.outBytes)}</b>`+
     (failedPages?` · <span style="color:var(--warn)">${failedPages} page${failedPages>1?"s":""} illisible${failedPages>1?"s":""}</span>`:"");
   $("after").appendChild(sum);
-  if(!dir && outputs.length>1){
+  if(!sink && outputs.length>1){
     const b=document.createElement("button"); b.className="secondary"; b.type="button"; b.textContent=`Tout télécharger (${outputs.length} fichiers)`;
     b.onclick=async()=>{ for(const f of outputs){ downloadBlob(f.blob,f.filename); await new Promise(r=>setTimeout(r,500)); } };
     $("after").appendChild(b);
@@ -1473,6 +1615,7 @@ if("launchQueue" in window){
   });
 }
 
+if(!window.showDirectoryPicker){ $("dest-dir").classList.add("hidden"); if(S.dest==="dir") S.dest="dl"; }
 syncControls();
 </script>
 <script>
