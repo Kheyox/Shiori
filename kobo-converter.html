@@ -718,7 +718,7 @@ function buildProcessor(makeCanvas, toBlob){
     const agree=Math.max(...ls)-Math.min(...ls) < 40;
     const bgc=corners.reduce((a,c)=>[a[0]+c[0]/4,a[1]+c[1]/4,a[2]+c[2]/4],[0,0,0]).map(Math.round);
     const bg=`rgb(${bgc[0]},${bgc[1]},${bgc[2]})`;
-    const full={sx,sy,sw,sh,bg};
+    const full={sx,sy,sw,sh,bg,trim:[0,0,0,0]};
     if(!trim || !agree) return full;
 
     // « Encre » = nettement différent du fond. Les ombres grises de scan, le
@@ -738,7 +738,8 @@ function buildProcessor(makeCanvas, toBlob){
     bottom=Math.min(h-1,bottom+pad); right=Math.min(w-1,right+pad);
     const bw=right-left+1, bh=bottom-top+1;
     if(bw<w*0.35||bh<h*0.35) return full;   // page quasi vide : on ne touche à rien
-    return {sx:sx+left/s, sy:sy+top/s, sw:Math.min(sw,bw/s), sh:Math.min(sh,bh/s), bg};
+    return {sx:sx+left/s, sy:sy+top/s, sw:Math.min(sw,bw/s), sh:Math.min(sh,bh/s), bg,
+      trim:[top/h, (h-1-bottom)/h, left/w, (w-1-right)/w]};
   }
 
   // Traitements pixel sur la page finale : N&B, niveaux automatiques,
@@ -796,6 +797,7 @@ function buildProcessor(makeCanvas, toBlob){
   // papier. rot: 0, 1 (horaire) ou -1 (anti-horaire).
   function compose(bmp,box,o,rot){
     const ew=rot?box.sh:box.sw, eh=rot?box.sw:box.sh;
+    const trimInfo=box.trim;
     const sc=Math.min(o.tw/ew, o.th/eh);
     const dw=Math.max(1,Math.round(ew*sc)), dh=Math.max(1,Math.round(eh*sc));
     const x=Math.round((o.tw-dw)/2), y=Math.round((o.th-dh)/2);
@@ -808,6 +810,7 @@ function buildProcessor(makeCanvas, toBlob){
     else ctx.drawImage(bmp,box.sx,box.sy,box.sw,box.sh,0,0,dw,dh);
     ctx.restore();
     finish(ctx,o.tw,o.th,o);
+    cv._trim=trimInfo;
     return cv;
   }
 
@@ -892,7 +895,7 @@ function buildProcessor(makeCanvas, toBlob){
 
   function processBitmap(bmp,o){
     if(bmp.height>bmp.width*2.2) return splitStrip(bmp,o);
-    const isSpread=bmp.width>bmp.height*1.15;
+    const isSpread=bmp.width>bmp.height*1.05;
     if(!isSpread || o.dblmode==="keep") return [region(bmp,0,0,bmp.width,bmp.height,o)];
     if(o.dblmode==="rotate"){
       const full=analyse(bmp,0,0,bmp.width,bmp.height,o.trim);
@@ -909,7 +912,7 @@ function buildProcessor(makeCanvas, toBlob){
     const bmp=await createImageBitmap(blob);
     const gray=decideGray(bmp,o);
     const o2=Object.assign({},o,{gray, sat:gray?1:o.sat, levels:gray});
-    const isSpread=bmp.width>bmp.height*1.15;
+    const isSpread=bmp.width>bmp.height*1.05;
     const canvases=processBitmap(bmp,o2);
     const res={count:canvases.length, isSpread, gray, srcW:bmp.width, srcH:bmp.height};
     if(asBlobs){ res.blobs=[]; for(const cv of canvases) res.blobs.push(await toBlob(cv,o.quality)); }
@@ -1364,7 +1367,8 @@ async function renderPreview(){
       const out=await domBlob(r.canvases[pv.sub],0.92);
       if(tok!==pv.token) return;
       url=URL.createObjectURL(out);
-      info=(r.gray?"Noir & blanc":"Couleur")+(r.isSpread?" · double page":"")+(r.count>1?` · écran ${pv.sub+1}/${r.count}`:"");
+      const tr=r.canvases[pv.sub]._trim, pc=x=>Math.round(x*100);
+      info=(r.gray?"N&B":"Couleur")+(r.isSpread?" · double page":"")+` · source ${r.srcW}×${r.srcH}`+(tr&&S.trim?` · rogné ↑${pc(tr[0])} ↓${pc(tr[1])} ←${pc(tr[2])} →${pc(tr[3])} %`:"")+(r.count>1?` · écran ${pv.sub+1}/${r.count}`:"");
     }
     if(pv.url) URL.revokeObjectURL(pv.url);
     pv.url=url; img.src=url; img.hidden=false; ph.hidden=true;
