@@ -984,7 +984,9 @@ const IMG_RE=/\.(jpe?g|png|webp|gif|bmp|avif)$/i;
 const collator=new Intl.Collator(undefined,{numeric:true,sensitivity:"base"});
 const natSort=(a,b)=>collator.compare(a,b);
 const isJunk=n=>n.includes("__MACOSX")||n.split("/").pop().startsWith(".")||n.endsWith("/");
-const nextTick=()=>new Promise(r=>setTimeout(r,0));
+// Rend la main à l'interface sans setTimeout : les minuteries sont ralenties (1 s, voire 1 min)
+// quand l'onglet est en arrière-plan, pas les messages.
+const nextTick=()=>new Promise(r=>{ const c=new MessageChannel(); c.port1.onmessage=()=>{ c.port1.close(); r(); }; c.port2.postMessage(0); });
 
 async function mapLimit(items, limit, fn){
   const results=new Array(items.length);
@@ -1751,6 +1753,9 @@ async function runConvert(){
   }
   converting=true; outputs=[];
   try{ wakeLock=navigator.wakeLock?await navigator.wakeLock.request("screen"):null; }catch(e){}
+  // Un verrou Web tenu pendant la conversion évite le bridage « intensif » de l'onglet en arrière-plan.
+  let releaseLock=null;
+  try{ if(navigator.locks) navigator.locks.request("shiori-convert",()=>new Promise(r=>{ releaseLock=r; })); }catch(e){}
   const o=opts(), ext=S.format==="kepub"?".kepub.epub":".cbz";
   const go=$("convert"); go.disabled=true;
   $("reset").disabled=true;
@@ -1862,6 +1867,7 @@ async function runConvert(){
   }
   if(sink) offerCleanup(cleanup, sink.label, vols.some(v=>!(v.src&&v.src.length)));
   go.disabled=false; $("reset").disabled=false; converting=false;
+  if(releaseLock) releaseLock();
   try{ wakeLock&&wakeLock.release(); }catch(e){} wakeLock=null;
   if(document.hidden && "Notification" in window && Notification.permission==="granted"){
     try{ new Notification("Shiori — conversion terminée ✓"); }catch(e){}
