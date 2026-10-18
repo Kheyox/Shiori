@@ -1387,7 +1387,8 @@ async function renderPreview(){
    repère les blocs de contenu et les grands vides, puis on redécoupe en pages
    à la taille exacte de l'écran, en coupant de préférence dans les zones vides. */
 async function buildWebtoonPlan(v,o,getBlob,progress){
-  const q=2, PW=24;
+  const q=2, PW=96;
+  const chunks=[];
   const imgs=[], uniA=[], lumA=[], rA=[], gA=[], bA=[], detA=[];
   let W=0, y0=0, r0=0, failed=0;
   for(let i=0;i<v.count;i++){
@@ -1397,9 +1398,10 @@ async function buildWebtoonPlan(v,o,getBlob,progress){
     const c=domCanvas(PW,rows), cx=c.getContext("2d",{willReadFrequently:true});
     cx.drawImage(bmp,0,0,PW,rows);
     const d=cx.getImageData(0,0,PW,rows).data;
+    const chunk=new Uint8Array(rows*PW); chunks.push(chunk);
     for(let y=0;y<rows;y++){
       let mn=255,mx=0,sum=0,sr=0,sg=0,sb=0;
-      for(let x=0;x<PW;x++){ const p=(y*PW+x)*4; const l=d[p]*0.299+d[p+1]*0.587+d[p+2]*0.114; if(l<mn)mn=l; if(l>mx)mx=l; sum+=l; sr+=d[p]; sg+=d[p+1]; sb+=d[p+2]; }
+      for(let x=0;x<PW;x++){ const p=(y*PW+x)*4; const l=d[p]*0.299+d[p+1]*0.587+d[p+2]*0.114; chunk[y*PW+x]=l; if(l<mn)mn=l; if(l>mx)mx=l; sum+=l; sr+=d[p]; sg+=d[p+1]; sb+=d[p+2]; }
       uniA.push((mx-mn)<26?1:0); lumA.push(sum/PW); detA.push(mx-mn);
       rA.push(sr/PW); gA.push(sg/PW); bA.push(sb/PW);
     }
@@ -1426,6 +1428,26 @@ async function buildWebtoonPlan(v,o,getBlob,progress){
   let bestBin=null; for(const e of bins.values()) if(!bestBin||e.n>bestBin.n) bestBin=e;
   const bgc=bestBin?[bestBin.r/bestBin.n,bestBin.g/bestBin.n,bestBin.b/bestBin.n]:[255,255,255];
   const bg=`rgb(${Math.round(bgc[0])},${Math.round(bgc[1])},${Math.round(bgc[2])})`;
+  // Pour choisir où couper : énergie horizontale (texte, visages), frontière de case
+  // (changement net sur toute la largeur) et part de « fond » dans la ligne (bulle, texte)
+  const bgL=bgc[0]*0.299+bgc[1]*0.587+bgc[2]*0.114;
+  const eng=new Float32Array(PH), bnd=new Float32Array(PH), bgf=new Float32Array(PH);
+  { let pi=0;
+    for(const ch of chunks){
+      const rows=ch.length/PW;
+      for(let y=0;y<rows;y++,pi++){
+        let e=0,bc=0,bd=0;
+        for(let x=0;x<PW;x++){
+          const l=ch[y*PW+x];
+          if(x) e+=Math.abs(l-ch[y*PW+x-1]);
+          if(Math.abs(l-bgL)<26) bc++;
+          if(y && Math.abs(l-ch[(y-1)*PW+x])>40) bd++;
+        }
+        eng[pi]=e/PW; bgf[pi]=bc/PW; bnd[pi]=bd/PW;
+      }
+    }
+    chunks.length=0;
+  }
   const gap=new Uint8Array(PH);
   for(let p=0;p<PH;p++) gap[p]=(uni[p] && Math.abs(rA[p]-bgc[0])<34 && Math.abs(gA[p]-bgc[1])<34 && Math.abs(bA[p]-bgc[2])<34)?1:0;
   const mergeGap=Math.max(2,Math.round(pageH*0.04/q));
@@ -1447,7 +1469,9 @@ async function buildWebtoonPlan(v,o,getBlob,progress){
   const bestCut=(lo,hi)=>{
     let best=hi, bs=-1;
     for(let yy=Math.ceil(lo); yy<=hi; yy+=q){
-      const r=toRow(yy), sc=(gap[r]?3:uni[r]?1.5:1/(1+detA[r]/20))+(yy-lo)/(hi-lo+1)*0.2;
+      const r=toRow(yy);
+      const base=gap[r]?3 : bnd[r]>0.6?2.5 : bgf[r]<0.04?1.6/(1+eng[r]/10) : 0.3/(1+eng[r]/10);
+      const sc=base+(yy-lo)/(hi-lo+1)*0.2;
       if(sc>=bs){ bs=sc; best=yy; }
     }
     return best;
@@ -1459,7 +1483,7 @@ async function buildWebtoonPlan(v,o,getBlob,progress){
       const H=sg.y1-a, gapUse=cur.length?gapW:0, avail=pageH-used-gapUse;
       if(H<=avail){ cur.push({y0:a,y1:sg.y1}); used+=gapUse+H; a=sg.y1; break; }
       if(cur.length && (avail<0.15*pageH || (H<=pageH && avail<0.25*pageH))){ pages.push(cur); cur=[]; used=0; continue; }
-      const cut=bestCut(Math.max(a+q,a+avail*0.7), a+avail);
+      const cut=bestCut(Math.max(a+q,a+avail*0.5), a+avail);
       cur.push({y0:a,y1:cut}); pages.push(cur); cur=[]; used=0; a=cut;
     }
   }
