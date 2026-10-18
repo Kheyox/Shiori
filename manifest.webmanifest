@@ -19,7 +19,6 @@
         "application/vnd.comicbook+zip": [".cbz"],
         "application/zip": [".zip"],
         "application/x-cbr": [".cbr"],
-        "application/pdf": [".pdf"],
         "application/epub+zip": [".epub"]
       }
     }
@@ -32,7 +31,7 @@
       "files": [
         {
           "name": "files",
-          "accept": ["application/zip", "application/pdf", "application/epub+zip", "image/*", ".cbz", ".zip", ".cbr", ".pdf", ".epub"]
+          "accept": ["application/zip", "application/epub+zip", "image/*", ".cbz", ".zip", ".cbr", ".epub"]
         }
       ]
     }
