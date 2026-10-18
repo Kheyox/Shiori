@@ -687,10 +687,13 @@ function buildProcessor(makeCanvas, toBlob){
     const full={sx,sy,sw,sh,bg};
     if(!trim || !agree) return full;
 
-    const TOL=34, MAXC=Math.max(1,Math.round(0.004*Math.max(w,h)));
-    const isBg=i=>Math.abs(d[i]-bgc[0])<TOL && Math.abs(d[i+1]-bgc[1])<TOL && Math.abs(d[i+2]-bgc[2])<TOL;
-    const rowEmpty=y=>{let n=0;for(let x=0;x<w;x++){if(!isBg((y*w+x)*4)&&++n>MAXC)return false;}return true;};
-    const colEmpty=x=>{let n=0;for(let y=0;y<h;y++){if(!isBg((y*w+x)*4)&&++n>MAXC)return false;}return true;};
+    // « Encre » = nettement différent du fond. Les ombres grises de scan, le
+    // bord de page ou le jaunissement (écart faible) ne comptent PAS comme contenu.
+    const bl=lum(bgc[0],bgc[1],bgc[2]), THR=52, MAXC=Math.max(1,Math.round(0.004*Math.max(w,h)));
+    const isInk=i=>Math.abs(lum(d[i],d[i+1],d[i+2])-bl)>THR ||
+      Math.max(Math.abs(d[i]-bgc[0]),Math.abs(d[i+1]-bgc[1]),Math.abs(d[i+2]-bgc[2]))>80;
+    const rowEmpty=y=>{let n=0;for(let x=0;x<w;x++){if(isInk((y*w+x)*4)&&++n>MAXC)return false;}return true;};
+    const colEmpty=x=>{let n=0;for(let y=0;y<h;y++){if(isInk((y*w+x)*4)&&++n>MAXC)return false;}return true;};
     let top=0,bottom=h-1,left=0,right=w-1;
     while(top<bottom&&rowEmpty(top))top++;
     while(bottom>top&&rowEmpty(bottom))bottom--;
@@ -1039,6 +1042,41 @@ function setBusy(msg,sub){
   $("drop-sub").textContent=sub||"CBZ, ZIP, CBR, EPUB ou dossiers d'images";
 }
 
+// Liste des images d'un zip en ne lisant que son répertoire central (quelques Ko
+// au lieu de tout le fichier). Renvoie null si le zip est atypique (zip64…).
+async function zipImageNames(file){
+  const tailLen=Math.min(file.size,65557);
+  const tail=new DataView(await file.slice(file.size-tailLen).arrayBuffer());
+  let p=tailLen-22;
+  while(p>=0 && tail.getUint32(p,true)!==0x06054b50) p--;
+  if(p<0) return null;
+  const entries=tail.getUint16(p+10,true), cdSize=tail.getUint32(p+12,true), cdOff=tail.getUint32(p+16,true);
+  if(entries===0xFFFF||cdSize===0xFFFFFFFF||cdOff===0xFFFFFFFF) return null;
+  const buf=await file.slice(cdOff,cdOff+cdSize).arrayBuffer();
+  const dv=new DataView(buf), u8=new Uint8Array(buf), dec=new TextDecoder("utf-8");
+  const names=[]; let o=0;
+  while(o+46<=buf.byteLength && dv.getUint32(o,true)===0x02014b50){
+    const nl=dv.getUint16(o+28,true), el=dv.getUint16(o+30,true), cl=dv.getUint16(o+32,true);
+    const name=dec.decode(u8.subarray(o+46,o+46+nl));
+    if(!name.endsWith("/") && IMG_RE.test(name) && !isJunk(name)) names.push(name);
+    o+=46+nl+el+cl;
+  }
+  return names.sort(natSort);
+}
+async function zipImageNamesSlow(f){
+  const zip=await JSZip.loadAsync(f);
+  return Object.keys(zip.files).filter(k=>!zip.files[k].dir&&IMG_RE.test(k)&&!isJunk(k)).sort(natSort);
+}
+// Ouvre un zip complet et réaligne les noms de pages si l'encodage diffère.
+async function openZip(v){
+  const zip=await JSZip.loadAsync(v.file);
+  if(!zip.file(v.pageNames[0])){
+    v.pageNames=Object.keys(zip.files).filter(k=>!zip.files[k].dir&&IMG_RE.test(k)&&!isJunk(k)).sort(natSort);
+    v.count=v.pageNames.length;
+  }
+  return zip;
+}
+
 async function addFiles(list){
   const files=[...list];
   const archives=files.filter(f=>/\.(cbz|zip|epub)$/i.test(f.name)).sort((a,b)=>natSort(a.name,b.name));
@@ -1048,16 +1086,18 @@ async function addFiles(list){
   let n=0, failed=0, added=0;
   const tick=async(name)=>{ n++; setBusy(`Lecture… ${n}/${todo}`,name); await nextTick(); };
 
-  for(const f of archives){
-    await tick(f.name);
+  // Lecture rapide : seul l'index (fin du zip) est lu, pas les images. Plusieurs
+  // archives en parallèle.
+  await mapLimit(archives, 6, async(f)=>{
     try{
-      const zip=await JSZip.loadAsync(f);
-      const names=Object.keys(zip.files).filter(k=>!zip.files[k].dir&&IMG_RE.test(k)&&!isJunk(k)).sort(natSort);
+      let names=await zipImageNames(f);
+      if(!names) names=await zipImageNamesSlow(f);
       if(!names.length) throw new Error("vide");
       const raw=f.name.replace(/\.(cbz|zip|epub)$/i,"");
       vols.push({id:++volSeq, raw, name:autoName(raw), kind:"zip", file:f, pageNames:names, count:names.length}); added++;
     }catch(e){ failed++; console.error("archive illisible",f.name,e); }
-  }
+    n++; setBusy(`Lecture… ${n}/${todo}`,f.name);
+  });
   for(const f of rars){
     await tick(f.name);
     try{
@@ -1132,7 +1172,7 @@ let zipCache={id:-1,zip:null};
 async function pageBlob(v,i){
   if(v.kind==="loose") return v.pages[i];
   if(v.kind==="zip"){
-    if(zipCache.id!==v.id){ zipCache={id:v.id,zip:await JSZip.loadAsync(v.file)}; }
+    if(zipCache.id!==v.id){ zipCache={id:v.id,zip:await openZip(v)}; }
     return zipCache.zip.file(v.pageNames[i]).async("blob");
   }
   // rar : on rouvre (rare, préférence à la simplicité)
@@ -1297,7 +1337,7 @@ async function runConvert(){
 
     let zip=null, rar=null;
     try{
-      if(v.kind==="zip") zip=await JSZip.loadAsync(v.file);
+      if(v.kind==="zip") zip=await openZip(v);
       else if(v.kind==="rar") rar=await openRar(v.file);
     }catch(e){ console.error(e); }
 
