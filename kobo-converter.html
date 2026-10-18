@@ -262,6 +262,14 @@
 
       <div class="card" id="settings">
         <div class="opt">
+          <span class="lab">Type</span>
+          <p class="hint">Webtoon : les images sont recollées puis redécoupées à la taille de l'écran.</p>
+          <div class="seg" data-key="kind" role="group" aria-label="Type">
+            <button type="button" data-val="manga">Manga / BD</button>
+            <button type="button" data-val="webtoon">Webtoon</button>
+          </div>
+        </div>
+        <div class="opt">
           <span class="lab">Couleur</span>
           <p class="hint">Auto garde la couleur uniquement sur les pages qui en ont.</p>
           <div class="seg" data-key="color" role="group" aria-label="Couleur">
@@ -270,14 +278,14 @@
             <button type="button" data-val="color">Couleur</button>
           </div>
         </div>
-        <div class="opt">
+        <div class="opt manga-only">
           <span class="lab">Sens de lecture</span>
           <div class="seg" data-key="rtl" role="group" aria-label="Sens de lecture">
             <button type="button" data-val="1">Manga ← droite à gauche</button>
             <button type="button" data-val="0">Gauche à droite →</button>
           </div>
         </div>
-        <div class="opt">
+        <div class="opt manga-only">
           <span class="lab">Doubles pages</span>
           <p class="hint">Pivoter garde l'image entière, en tournant la liseuse.</p>
           <div class="seg" data-key="spread" role="group" aria-label="Doubles pages">
@@ -910,7 +918,15 @@ function buildProcessor(makeCanvas, toBlob){
     return res;
   }
 
+  // Pour le webtoon : applique N&B/couleur auto + traitements sur une page déjà composée.
+  function postprocess(cv,o){
+    const gray=decideGray(cv,o);
+    const ctx=cv.getContext("2d",{willReadFrequently:true});
+    finish(ctx,cv.width,cv.height,Object.assign({},o,{gray, sat:gray?1:o.sat, levels:gray}));
+    return {gray};
+  }
   return {
+    postprocess,
     processToBlobs:(blob,o)=>run(blob,o,true),
     processToCanvases:(blob,o)=>run(blob,o,false),
   };
@@ -990,7 +1006,7 @@ function toast(msg,ms=3800){
 }
 
 /* ---------- Réglages (mémorisés) ---------- */
-const DEFAULTS={dest:"dir", color:"auto", rtl:"1", spread:"rotate", rotdir:"cw", format:"kepub", device:"1264x1680",
+const DEFAULTS={kind:"manga", dest:"dir", color:"auto", rtl:"1", spread:"rotate", rotdir:"cw", format:"kepub", device:"1264x1680",
   quality:92, trim:true, sharpen:true, meta:true};
 const LS_KEY="shiori_v2_settings";
 let S={...DEFAULTS};
@@ -999,7 +1015,7 @@ const saveSettings=()=>{ try{ localStorage.setItem(LS_KEY,JSON.stringify(S)); }c
 
 function opts(){
   const [tw,th]=S.device.split("x").map(Number);
-  return { tw, th, colorMode:S.color, rtl:S.rtl==="1", dblmode:S.spread, rotdir:S.rotdir,
+  return { tw, th, colorMode:S.color, rtl:S.kind==="webtoon"?false:S.rtl==="1", dblmode:S.spread, rotdir:S.rotdir,
     trim:!!S.trim, sharpen:!!S.sharpen, sat:1.18, quality:S.quality/100 };
 }
 
@@ -1012,6 +1028,7 @@ function syncControls(){
   document.querySelectorAll("select[data-key]").forEach(i=>{ i.value=S[i.dataset.key]; });
   document.querySelectorAll("input[type=range][data-key]").forEach(i=>{ i.value=S[i.dataset.key]; });
   $("q-val").textContent=S.quality+" %";
+  document.querySelectorAll(".manga-only").forEach(e=>e.classList.toggle("hidden",S.kind==="webtoon"));
   const [w,h]=S.device.split("x");
   $("device").style.setProperty("--ar",`${w}/${h}`);
   $("pv-dev").textContent=`${w}×${h}`;
@@ -1021,7 +1038,9 @@ function onSetting(){ saveSettings(); syncControls(); schedulePreview(); updateS
 document.querySelectorAll(".seg[data-key]").forEach(seg=>{
   seg.addEventListener("click",e=>{
     const b=e.target.closest("button"); if(!b) return;
-    S[seg.dataset.key]=b.dataset.val; onSetting();
+    S[seg.dataset.key]=b.dataset.val;
+    if(seg.dataset.key==="kind"){ pv.page=0; pv.sub=0; wtPlan=null; refreshAutoNames(); renderVols(); }
+    onSetting();
   });
 });
 document.querySelectorAll("input[type=checkbox][data-key]").forEach(i=>i.addEventListener("change",()=>{ S[i.dataset.key]=i.checked; onSetting(); }));
@@ -1033,8 +1052,10 @@ document.querySelectorAll("input[type=range][data-key]").forEach(i=>i.addEventLi
 function autoName(raw){
   const {series,tome}=parseName(raw);
   if(tome==null) return series||raw;
-  return `${series} - Tome ${String(tome).padStart(2,"0")}`;
+  const word=S.kind==="webtoon"?"Chapitre":"Tome";
+  return `${series} - ${word} ${String(tome).padStart(S.kind==="webtoon"?3:2,"0")}`;
 }
+function refreshAutoNames(){ vols.forEach(v=>{ if(v.auto) v.name=autoName(v.raw); }); }
 const safeFile=n=>n.replace(/[\\/:*?"<>|]+/g,"_").replace(/\s+/g," ").trim()||"manga";
 
 /* ---------- Import ---------- */
@@ -1120,7 +1141,7 @@ async function addFiles(list){
       if(!names) names=await zipImageNamesSlow(f);
       if(!names.length) throw new Error("vide");
       const raw=f.name.replace(/\.(cbz|zip|epub)$/i,"");
-      vols.push({id:++volSeq, raw, name:autoName(raw), kind:"zip", file:f, src:f._src?[f._src]:[], pageNames:names, count:names.length}); added++;
+      vols.push({id:++volSeq, raw, name:autoName(raw), auto:true, kind:"zip", file:f, src:f._src?[f._src]:[], pageNames:names, count:names.length}); added++;
     }catch(e){ failed++; console.error("archive illisible",f.name,e); }
     n++; setBusy(`Lecture… ${n}/${todo}`,f.name);
   });
@@ -1131,7 +1152,7 @@ async function addFiles(list){
       if(archive.close){ try{await archive.close();}catch(e){} }
       if(!items.length) throw new Error("vide");
       const raw=f.name.replace(/\.(cbr|rar)$/i,"");
-      vols.push({id:++volSeq, raw, name:autoName(raw), kind:"rar", file:f, src:f._src?[f._src]:[], count:items.length}); added++;
+      vols.push({id:++volSeq, raw, name:autoName(raw), auto:true, kind:"rar", file:f, src:f._src?[f._src]:[], count:items.length}); added++;
     }catch(e){ failed++; console.error("cbr illisible",f.name,e); }
   }
   // images en vrac : un tome par dossier d'origine
@@ -1146,7 +1167,7 @@ async function addFiles(list){
     for(const [dir,arr] of [...groups].sort((a,b)=>natSort(a[0],b[0]))){
       arr.sort((a,b)=>natSort(a.webkitRelativePath||a._path||a.name, b.webkitRelativePath||b._path||b.name));
       const raw=dir?dir.split("/").pop():"Images";
-      vols.push({id:++volSeq, raw, name:autoName(raw), kind:"loose", pages:arr, src:arr.map(f=>f._src).filter(Boolean), count:arr.length}); added++;
+      vols.push({id:++volSeq, raw, name:autoName(raw), auto:true, kind:"loose", pages:arr, src:arr.map(f=>f._src).filter(Boolean), count:arr.length}); added++;
     }
   }
   setBusy(null);
@@ -1262,7 +1283,7 @@ function renderVols(){
     const eye=document.createElement("button"); eye.className="pv"; eye.type="button"; eye.title="Voir l'aperçu de ce tome"; eye.textContent=idx+1;
     eye.onclick=()=>previewTo(idx,null,true);
     const inp=document.createElement("input"); inp.value=v.name; inp.setAttribute("aria-label","Nom du tome "+(idx+1));
-    inp.onchange=()=>{ v.name=inp.value.trim()||autoName(v.raw); inp.value=v.name; };
+    inp.onchange=()=>{ v.auto=false; v.name=inp.value.trim()||autoName(v.raw); inp.value=v.name; };
     const cnt=document.createElement("small"); cnt.textContent=v.count+" p.";
     const x=document.createElement("button"); x.className="x"; x.type="button"; x.title="Retirer"; x.textContent="×"; x.setAttribute("aria-label","Retirer "+v.name);
     x.onclick=()=>{ if(converting) return; vols.splice(idx,1); if(!vols.length){ resetAll(); return; } previewTo(Math.min(pv.vol,vols.length-1),null,true); renderVols(); updateSubGo(); };
@@ -1284,12 +1305,14 @@ const pv={vol:0, page:0, sub:0, subCount:1, view:"kobo", token:0, url:null, time
 const schedulePreview=()=>{ clearTimeout(pv.timer); pv.timer=setTimeout(renderPreview,130); };
 
 // navigation : (vol, page, sub). null = garder. reset → recalcul complet
+const pvStart=vi=>S.kind==="webtoon"?0:Math.min(2,vols[vi].count-1);
+const pvCount=()=>(S.kind==="webtoon"&&wtPlan&&wtPlan.plan)?wtPlan.plan.pages.length:vols[pv.vol].count;
 function previewTo(vi,page,reset){
-  if(vi!=null && vi!==pv.vol){ pv.vol=vi; page=page??Math.min(2,vols[vi].count-1); }
-  else if(reset && page==null){ page=Math.min(2,vols[pv.vol].count-1); }
+  if(vi!=null && vi!==pv.vol){ pv.vol=vi; page=page??pvStart(vi); wtPlan=null; }
+  else if(reset && page==null){ page=pvStart(pv.vol); }
   if(page!=null){ pv.page=page; pv.sub=0; }
   const v=vols[pv.vol];
-  const r=$("pv-range"); r.max=Math.max(0,v.count-1); r.value=pv.page;
+  const r=$("pv-range"); r.max=Math.max(0,pvCount()-1); r.value=pv.page;
   renderVols();
   renderPreview();
 }
@@ -1298,7 +1321,7 @@ function stepPreview(dir){
   if(pv.view==="kobo" && dir>0 && pv.sub<pv.subCount-1){ pv.sub++; return renderPreview(); }
   if(pv.view==="kobo" && dir<0 && pv.sub>0){ pv.sub--; return renderPreview(); }
   const np=pv.page+dir;
-  if(np<0||np>=v.count) return;
+  if(np<0||np>=pvCount()) return;
   pv.page=np; pv.sub=dir<0?99:0; $("pv-range").value=np; renderPreview();
 }
 $("next").onclick=()=>stepPreview(1);
@@ -1322,6 +1345,7 @@ async function renderPreview(){
   const tok=++pv.token;
   const img=$("pv-img"), ph=$("pv-ph"), screen=$("screen");
   screen.classList.add("loading");
+  if(S.kind==="webtoon") return renderWebtoonPreview(v,tok);
   try{
     const blob=await pageBlob(v,pv.page);
     if(tok!==pv.token) return;
@@ -1347,6 +1371,175 @@ async function renderPreview(){
   }catch(e){
     console.error("aperçu",e);
     img.hidden=true; ph.hidden=false; ph.textContent="Page illisible";
+  }
+  if(tok===pv.token) screen.classList.remove("loading");
+}
+
+/* ---------- Webtoon ----------
+   Toutes les images d'un chapitre sont mises bout à bout (virtuellement), on
+   repère les blocs de contenu et les grands vides, puis on redécoupe en pages
+   à la taille exacte de l'écran, en coupant de préférence dans les zones vides. */
+async function buildWebtoonPlan(v,o,getBlob,progress){
+  const q=2, PW=24;
+  const imgs=[], uniA=[], lumA=[];
+  let W=0, y0=0, r0=0, failed=0;
+  for(let i=0;i<v.count;i++){
+    let bmp; try{ bmp=await createImageBitmap(await getBlob(i)); }catch(e){ failed++; continue; }
+    if(!W) W=bmp.width;
+    const k=W/bmp.width, hs=bmp.height*k, rows=Math.max(1,Math.round(hs/q));
+    const c=domCanvas(PW,rows), cx=c.getContext("2d",{willReadFrequently:true});
+    cx.drawImage(bmp,0,0,PW,rows);
+    const d=cx.getImageData(0,0,PW,rows).data;
+    for(let y=0;y<rows;y++){
+      let mn=255,mx=0,sum=0;
+      for(let x=0;x<PW;x++){ const p=(y*PW+x)*4; const l=d[p]*0.299+d[p+1]*0.587+d[p+2]*0.114; if(l<mn)mn=l; if(l>mx)mx=l; sum+=l; }
+      uniA.push((mx-mn)<26?1:0); lumA.push(sum/PW);
+    }
+    imgs.push({i,k,hs,y0,r0,rows,w:bmp.width,h:bmp.height});
+    y0+=hs; r0+=rows;
+    if(bmp.close) bmp.close();
+    if(progress) progress(i+1,v.count);
+    if(i%8===7) await nextTick();
+  }
+  if(!imgs.length) throw new Error("aucune image lisible");
+  const PH=r0, uni=Uint8Array.from(uniA), lm=Float32Array.from(lumA);
+  const s=Math.min(o.tw/W,2), wD=Math.round(W*s), xD=Math.round((o.tw-wD)/2);
+  const pageH=Math.max(8,Math.round(o.th/s));
+  const findR=p=>{ let lo=0,hi=imgs.length-1; while(lo<hi){ const m=(lo+hi+1)>>1; if(imgs[m].r0<=p) lo=m; else hi=m-1; } return imgs[lo]; };
+  const toY=p=>{ p=Math.min(PH,Math.max(0,p)); const m=findR(Math.min(PH-1,p)); return m.y0+(p-m.r0)*m.hs/m.rows; };
+  const findY=y=>{ let lo=0,hi=imgs.length-1; while(lo<hi){ const m=(lo+hi+1)>>1; if(imgs[m].y0<=y) lo=m; else hi=m-1; } return imgs[lo]; };
+  const toRow=y=>{ const m=findY(y); return Math.min(PH-1,Math.max(0,Math.round(m.r0+(y-m.y0)*m.rows/m.hs))); };
+
+  const uL=[]; for(let p=0;p<PH;p++) if(uni[p]) uL.push(lm[p]);
+  uL.sort((a,b)=>a-b);
+  const bgL=uL.length?uL[Math.floor(uL.length/2)]:255;
+  const bg=bgL>128?"#ffffff":"#000000";
+  const mergeGap=Math.max(2,Math.round(pageH*0.04/q));
+  const blocks=[]; let p=0;
+  while(p<PH){
+    while(p<PH&&uni[p])p++;
+    if(p>=PH)break;
+    let e=p,gap=0;
+    while(e<PH){ if(uni[e]){ gap++; if(gap>mergeGap)break; } else gap=0; e++; }
+    blocks.push({a:p,b:e-gap}); p=e;
+  }
+  if(!blocks.length) blocks.push({a:0,b:PH});
+  const pad=Math.max(1,Math.round(mergeGap/2));
+  const segs=blocks.map(b=>({y0:toY(Math.max(0,b.a-pad)), y1:toY(Math.min(PH,b.b+pad))})).filter(g=>g.y1-g.y0>2);
+  // Flux continu : on remplit chaque page au maximum ; quand il faut couper, on
+  // choisit la ligne la plus « vide » dans le dernier tiers de la page, et on
+  // préfère passer à la page suivante plutôt que de couper une scène qui y tient.
+  const gapDst=Math.round(o.th*0.02), gapW=gapDst/s;
+  const bestCut=(lo,hi)=>{
+    let best=hi, bs=-1;
+    for(let yy=Math.ceil(lo); yy<=hi; yy+=q){
+      const r=toRow(yy), sc=uni[r]?2:1/(1+Math.abs(lm[r]-bgL)/24);
+      if(sc>=bs){ bs=sc; best=yy; }
+    }
+    return best;
+  };
+  const pages=[]; let cur=[], used=0;
+  for(const sg of segs){
+    let a=sg.y0;
+    while(sg.y1-a>1e-6){
+      const H=sg.y1-a, gapUse=cur.length?gapW:0, avail=pageH-used-gapUse;
+      if(H<=avail){ cur.push({y0:a,y1:sg.y1}); used+=gapUse+H; a=sg.y1; break; }
+      if(cur.length && (avail<0.15*pageH || (H<=pageH && avail<0.35*pageH))){ pages.push(cur); cur=[]; used=0; continue; }
+      const cut=bestCut(Math.max(a+q,a+avail*0.7), a+avail);
+      cur.push({y0:a,y1:cut}); pages.push(cur); cur=[]; used=0; a=cut;
+    }
+  }
+  if(cur.length) pages.push(cur);
+
+  const cache=new Map();
+  const plan={imgs,pages:pages.length?pages:[[{y0:0,y1:y0}]],bg,s,wD,xD,gapDst,failed,
+    async bmp(im){
+      if(cache.has(im.i)) return cache.get(im.i);
+      const b=await createImageBitmap(await getBlob(im.i));
+      cache.set(im.i,b);
+      if(cache.size>4){ const k0=cache.keys().next().value; const old=cache.get(k0); cache.delete(k0); if(old.close) old.close(); }
+      return b;
+    },
+    close(){ for(const b of cache.values()){ if(b.close) b.close(); } cache.clear(); }
+  };
+  return plan;
+}
+async function renderPlanPage(plan,idx,o){
+  const cv=domCanvas(o.tw,o.th), ctx=cv.getContext("2d",{willReadFrequently:true});
+  ctx.fillStyle=plan.bg; ctx.fillRect(0,0,o.tw,o.th);
+  ctx.imageSmoothingEnabled=true; ctx.imageSmoothingQuality="high";
+  let yD=0;
+  for(const pc of plan.pages[idx]){
+    for(const im of plan.imgs){
+      if(im.y0+im.hs<=pc.y0) continue;
+      if(im.y0>=pc.y1) break;
+      const a=Math.max(pc.y0,im.y0), b=Math.min(pc.y1,im.y0+im.hs);
+      const sy=(a-im.y0)/im.k, sh=(b-a)/im.k;
+      const dTop=Math.round(yD+(a-pc.y0)*plan.s), dBot=Math.round(yD+(b-pc.y0)*plan.s);
+      if(dBot<=dTop||sh<=0) continue;
+      const bmp=await plan.bmp(im);
+      ctx.drawImage(bmp,0,sy,im.w,sh,plan.xD,dTop,plan.wD,dBot-dTop);
+    }
+    yD+=Math.round((pc.y1-pc.y0)*plan.s)+plan.gapDst;
+  }
+  const {gray}=mainApi.postprocess(cv,o);
+  return {cv,gray};
+}
+async function convertWebtoon(v,o,zip,rar,stats,ui){
+  const getBlob=async i=> v.kind==="loose" ? v.pages[i]
+    : v.kind==="zip" ? await zip.file(v.pageNames[i]).async("blob")
+    : await rar.items[i].cf.extract();
+  const plan=await buildWebtoonPlan(v,o,getBlob,(a,b)=>ui(a/b*0.5));
+  const blobs=[]; blobs.failed=plan.failed;
+  for(let p=0;p<plan.pages.length;p++){
+    const {cv,gray}=await renderPlanPage(plan,p,o);
+    blobs.push(await domBlob(cv,o.quality));
+    gray?stats.gray++:stats.color++;
+    ui(0.5+(p+1)/plan.pages.length*0.5);
+    if(p%4===3) await nextTick();
+  }
+  plan.close();
+  return blobs;
+}
+let wtPlan=null;   // {key, promise, plan}
+function getWtPlan(v){
+  const o=opts(), key=v.id+"|"+o.tw+"x"+o.th;
+  if(wtPlan&&wtPlan.key===key) return wtPlan.promise;
+  if(wtPlan&&wtPlan.plan) wtPlan.plan.close();
+  const entry={key,plan:null};
+  entry.promise=buildWebtoonPlan(v,o,i=>pageBlob(v,i),(a,b)=>{ if(wtPlan===entry) $("pv-info").textContent=`Analyse du chapitre… ${a}/${b}`; })
+    .then(pl=>{ entry.plan=pl; return pl; });
+  entry.promise.catch(()=>{ if(wtPlan===entry) wtPlan=null; });
+  wtPlan=entry; return entry.promise;
+}
+async function renderWebtoonPreview(v,tok){
+  const img=$("pv-img"), ph=$("pv-ph"), screen=$("screen");
+  try{
+    const plan=await getWtPlan(v);
+    if(tok!==pv.token) return;
+    const n=plan.pages.length;
+    pv.page=Math.max(0,Math.min(pv.page,n-1)); pv.sub=0; pv.subCount=1;
+    const r=$("pv-range"); r.max=n-1; r.value=pv.page;
+    let url, info="";
+    if(pv.view==="orig"){
+      screen.classList.add("orig");
+      const first=plan.imgs.find(im=>im.y0+im.hs>plan.pages[pv.page][0].y0)||plan.imgs[0];
+      url=URL.createObjectURL(await pageBlob(v,first.i));
+    }else{
+      screen.classList.remove("orig");
+      const {cv,gray}=await renderPlanPage(plan,pv.page,opts());
+      if(tok!==pv.token) return;
+      url=URL.createObjectURL(await domBlob(cv,0.92));
+      info=(gray?"Noir & blanc":"Couleur")+" · webtoon";
+    }
+    if(tok!==pv.token){ URL.revokeObjectURL(url); return; }
+    if(pv.url) URL.revokeObjectURL(pv.url);
+    pv.url=url; img.src=url; img.hidden=false; ph.hidden=true;
+    $("pv-info").textContent=info;
+    $("pv-label").textContent=`${v.name} — écran ${pv.page+1}/${n}`;
+  }catch(e){
+    console.error("aperçu webtoon",e);
+    img.hidden=true; ph.hidden=false; ph.textContent="Chapitre illisible";
   }
   if(tok===pv.token) screen.classList.remove("loading");
 }
@@ -1564,7 +1757,16 @@ async function runConvert(){
       else if(v.kind==="rar") rar=await openRar(v.file);
     }catch(e){ console.error(e); }
 
-    const perPage=await mapLimit(Array.from({length:v.count},(_,i)=>i), CONC, async(i)=>{
+    const wt=S.kind==="webtoon";
+    const base0=done;
+    const ui=fr=>{
+      done=base0+Math.round(fr*v.count);
+      const el=(Date.now()-t0)/1000;
+      fill.style.width=Math.round(done/total*100)+"%";
+      const eta=(done>=8&&el>3&&done<total)?` · ~${fmtDur(el/done*(total-done))} restantes`:"";
+      txt.textContent=`Tome ${j+1}/${vols.length} · ${v.name} — ${done}/${total} pages${eta}`;
+    };
+    const perPage= wt ? [await convertWebtoon(v,o,zip,rar,stats,ui)] : await mapLimit(Array.from({length:v.count},(_,i)=>i), CONC, async(i)=>{
       let blob;
       try{
         blob = v.kind==="loose" ? v.pages[i]
@@ -1580,6 +1782,7 @@ async function runConvert(){
       txt.textContent=`Tome ${j+1}/${vols.length} · ${v.name} — ${done}/${total} pages${eta}`;
       return r.blobs;
     });
+    if(wt){ failedPages+=perPage[0].failed||0; done=base0+v.count; }
     if(rar&&rar.archive.close){ try{await rar.archive.close();}catch(e){} }
     zip=null;
     stats.inBytes+= v.file?v.file.size:v.pages.reduce((s,b)=>s+b.size,0);

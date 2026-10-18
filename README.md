@@ -20,7 +20,8 @@ plus les fichiers PWA.
 - **Couleur auto** : une page n'est gardée en couleur que si elle en contient
   vraiment ; sinon niveaux de gris + niveaux auto (papier jauni → blanc pur).
   Les pages couleur reçoivent une légère hausse de saturation (écran Kaleido).
-- **Doubles pages** : pivoter, couper en 2 ou laisser. Webtoon (bandes très hautes) redécoupé automatiquement.
+- **Doubles pages** : pivoter, couper en 2 ou laisser.
+- **Webtoon** (réglage « Type ») : les images d'un chapitre sont recollées puis redécoupées en pages pleines à la taille de l'écran, en coupant dans les zones vides.
 - Sortie **KEPUB** (ou CBZ) avec série, numéro de tome, sens RTL, et auteur/résumé récupérés en ligne (désactivable).
 
 ## Lancer en local
