@@ -1120,7 +1120,7 @@ async function addFiles(list){
       if(!names) names=await zipImageNamesSlow(f);
       if(!names.length) throw new Error("vide");
       const raw=f.name.replace(/\.(cbz|zip|epub)$/i,"");
-      vols.push({id:++volSeq, raw, name:autoName(raw), kind:"zip", file:f, pageNames:names, count:names.length}); added++;
+      vols.push({id:++volSeq, raw, name:autoName(raw), kind:"zip", file:f, src:f._src?[f._src]:[], pageNames:names, count:names.length}); added++;
     }catch(e){ failed++; console.error("archive illisible",f.name,e); }
     n++; setBusy(`Lecture… ${n}/${todo}`,f.name);
   });
@@ -1131,7 +1131,7 @@ async function addFiles(list){
       if(archive.close){ try{await archive.close();}catch(e){} }
       if(!items.length) throw new Error("vide");
       const raw=f.name.replace(/\.(cbr|rar)$/i,"");
-      vols.push({id:++volSeq, raw, name:autoName(raw), kind:"rar", file:f, count:items.length}); added++;
+      vols.push({id:++volSeq, raw, name:autoName(raw), kind:"rar", file:f, src:f._src?[f._src]:[], count:items.length}); added++;
     }catch(e){ failed++; console.error("cbr illisible",f.name,e); }
   }
   // images en vrac : un tome par dossier d'origine
@@ -1146,7 +1146,7 @@ async function addFiles(list){
     for(const [dir,arr] of [...groups].sort((a,b)=>natSort(a[0],b[0]))){
       arr.sort((a,b)=>natSort(a.webkitRelativePath||a._path||a.name, b.webkitRelativePath||b._path||b.name));
       const raw=dir?dir.split("/").pop():"Images";
-      vols.push({id:++volSeq, raw, name:autoName(raw), kind:"loose", pages:arr, count:arr.length}); added++;
+      vols.push({id:++volSeq, raw, name:autoName(raw), kind:"loose", pages:arr, src:arr.map(f=>f._src).filter(Boolean), count:arr.length}); added++;
     }
   }
   setBusy(null);
@@ -1158,6 +1158,18 @@ async function addFiles(list){
 }
 
 // Dépôt : parcourt aussi les dossiers (webkitGetAsEntry)
+// Chaque fichier garde (si le navigateur le permet) un accès à son emplacement
+// d'origine, pour pouvoir proposer de le supprimer une fois converti et envoyé.
+const tag=(f,src,path)=>{
+  try{ Object.defineProperty(f,"_src",{value:src}); if(path) Object.defineProperty(f,"_path",{value:path}); }catch(e){}
+  return f;
+};
+async function walkDir(dh,prefix,out,depth=0){
+  for await (const [name,h] of dh.entries()){
+    if(h.kind==="file"){ try{ out.push(tag(await h.getFile(),{dir:dh,name,handle:h},prefix+name)); }catch(e){} }
+    else if(h.kind==="directory" && depth<3) await walkDir(h,prefix+name+"/",out,depth+1);
+  }
+}
 async function filesFromDrop(dt){
   const out=[];
   const readEntry=async(entry,path)=>{
@@ -1174,9 +1186,34 @@ async function filesFromDrop(dt){
       }while(batch.length);
     }
   };
-  const items=[...(dt.items||[])].map(i=>i.webkitGetAsEntry&&i.webkitGetAsEntry()).filter(Boolean);
-  if(items.length){ for(const e of items) await readEntry(e,""); return out; }
-  return [...dt.files];
+  // à appeler AVANT tout await : l'objet DataTransfer n'est valide que pendant l'évènement
+  const raw=[...(dt.items||[])].filter(i=>i.kind==="file");
+  const handles=raw.map(i=>i.getAsFileSystemHandle?i.getAsFileSystemHandle():null);
+  const entries=raw.map(i=>i.webkitGetAsEntry?i.webkitGetAsEntry():null);
+  if(!raw.length) return [...dt.files];
+  for(let i=0;i<raw.length;i++){
+    let h=null; try{ h=handles[i]&&await handles[i]; }catch(e){}
+    if(h&&h.kind==="file"){ try{ out.push(tag(await h.getFile(),{handle:h})); continue; }catch(e){} }
+    if(h&&h.kind==="directory"){ try{ await walkDir(h,h.name+"/",out); continue; }catch(e){} }
+    if(entries[i]) await readEntry(entries[i],"");
+  }
+  return out;
+}
+async function openFiles(){
+  if(!window.showOpenFilePicker){ $("file").click(); return; }
+  let hs; try{
+    hs=await window.showOpenFilePicker({multiple:true, types:[{description:"Mangas",
+      accept:{"application/zip":[".cbz",".zip",".epub"],"application/vnd.rar":[".cbr",".rar"],"image/*":[".jpg",".jpeg",".png",".webp"]}}]});
+  }catch(e){ return; }
+  const fs=[]; for(const h of hs){ try{ fs.push(tag(await h.getFile(),{handle:h})); }catch(e){} }
+  addFiles(fs);
+}
+async function openFolder(){
+  if(!window.showDirectoryPicker){ $("folder").click(); return; }
+  let dh; try{ dh=await window.showDirectoryPicker({mode:"readwrite", id:"shiori-in"}); }catch(e){ return; }
+  const out=[]; setBusy("Lecture du dossier…",dh.name);
+  try{ await walkDir(dh,"",out); }catch(e){ toast("Dossier illisible : "+e.message); }
+  addFiles(out);
 }
 
 const drop=$("drop");
@@ -1189,9 +1226,10 @@ document.addEventListener("drop",async e=>{
 });
 $("file").addEventListener("change",e=>{ addFiles(e.target.files); e.target.value=""; });
 $("folder").addEventListener("change",e=>{ addFiles(e.target.files); e.target.value=""; });
-$("pick-folder").addEventListener("click",()=>$("folder").click());
-drop.addEventListener("keydown",e=>{ if(e.key==="Enter"||e.key===" "){ e.preventDefault(); $("file").click(); } });
-$("add-more").addEventListener("click",()=>$("file").click());
+$("pick-folder").addEventListener("click",openFolder);
+drop.addEventListener("keydown",e=>{ if(e.key==="Enter"||e.key===" "){ e.preventDefault(); openFiles(); } });
+drop.addEventListener("click",e=>{ if(window.showOpenFilePicker){ e.preventDefault(); openFiles(); } });
+$("add-more").addEventListener("click",openFiles);
 
 /* ---------- Accès aux pages d'un tome ---------- */
 let zipCache={id:-1,zip:null};
@@ -1435,6 +1473,45 @@ function pickDriveFolder(){
   });
 }
 
+/* ---------- Suppression des originaux ----------
+   Seulement après envoi réussi, sans page en échec, et sur clic explicite. */
+function offerCleanup(list,label,someUnknown){
+  const box=document.createElement("div"); box.className="summary";
+  if(!list.length){
+    if(someUnknown){
+      box.textContent="Pour pouvoir supprimer les originaux après envoi, ajoute-les en les glissant-déposant ou avec le bouton (Chrome / Edge).";
+      $("after").appendChild(box);
+    }
+    return;
+  }
+  const n=list.reduce((t,v)=>t+v.src.length,0);
+  const msg=document.createElement("div");
+  msg.innerHTML=`<b>${list.length} tome${list.length>1?"s":""}</b> converti${list.length>1?"s":""} et enregistré${list.length>1?"s":""} dans ${label}. Les originaux sont encore sur ton PC.`;
+  const b=document.createElement("button"); b.className="secondary"; b.type="button";
+  b.textContent=`Supprimer les ${n} fichier${n>1?"s":""} d'origine du PC`;
+  b.onclick=async()=>{
+    const names=list.map(v=>v.name);
+    const preview=names.slice(0,8).join("\n")+(names.length>8?"\n… et "+(names.length-8)+" autres":"");
+    if(!confirm(`Supprimer définitivement ${n} fichier(s) d'origine ?\n(pas de corbeille — ils sont déjà dans ${label})\n\n${preview}`)) return;
+    b.disabled=true; let ok=0, ko=0;
+    for(const v of list) for(const src of v.src){
+      try{
+        const h=src.handle;
+        if(h && h.requestPermission){ if(await h.requestPermission({mode:"readwrite"})!=="granted") throw new Error("permission refusée"); }
+        if(src.dir && src.dir.removeEntry){
+          if(src.dir.requestPermission && await src.dir.requestPermission({mode:"readwrite"})!=="granted") throw new Error("permission refusée");
+          await src.dir.removeEntry(src.name);
+        }else if(h && h.remove) await h.remove();
+        else throw new Error("suppression non prise en charge");
+        ok++;
+      }catch(e){ ko++; console.error("suppression",v.name,e); }
+    }
+    box.innerHTML=`<b>${ok} fichier${ok>1?"s":""} supprimé${ok>1?"s":""}.</b>`+(ko?` <span style="color:var(--warn)">${ko} n'ont pas pu l'être.</span>`:"");
+  };
+  box.append(msg,b);
+  $("after").appendChild(box);
+}
+
 /* ---------- Conversion ---------- */
 let converting=false, outputs=[], wakeLock=null;
 
@@ -1463,6 +1540,7 @@ async function runConvert(){
   const t0=Date.now();
   const stats={color:0,gray:0,spreads:0,pages:0,inBytes:0,outBytes:0};
   let done=0, failedPages=0;
+  const cleanup=[];
 
   const used=new Set();
   for(let j=0;j<vols.length;j++){
@@ -1474,9 +1552,12 @@ async function runConvert(){
     txt.textContent=`Tome ${j+1}/${vols.length} · ${v.name}`;
     if(sink && sink.exists && sink.exists(filename)){   // reprise : déjà sur place
       done+=v.count; fill.style.width=Math.round(done/total*100)+"%";
-      addResult(filename,null,v.count,"déjà présent — ignoré"); continue;
+      addResult(filename,null,v.count,"déjà présent — ignoré");
+      if(v.src&&v.src.length) cleanup.push(v);
+      continue;
     }
 
+    const fp0=failedPages;
     let zip=null, rar=null;
     try{
       if(v.kind==="zip") zip=await openZip(v);
@@ -1522,7 +1603,8 @@ async function runConvert(){
     stats.outBytes+=file.size;
 
     if(sink){
-      try{ await sink.write(filename,file); addResult(filename,null,images.length,"enregistré dans "+sink.label); }
+      try{ await sink.write(filename,file); addResult(filename,null,images.length,"enregistré dans "+sink.label);
+        if(failedPages===fp0 && v.src && v.src.length) cleanup.push(v); }
       catch(e){ addResult(filename,null,images.length,"écriture impossible : "+e.message); }
     }else{
       outputs.push({filename,blob:file});
@@ -1545,6 +1627,7 @@ async function runConvert(){
     b.onclick=async()=>{ for(const f of outputs){ downloadBlob(f.blob,f.filename); await new Promise(r=>setTimeout(r,500)); } };
     $("after").appendChild(b);
   }
+  if(sink) offerCleanup(cleanup, sink.label, vols.some(v=>!(v.src&&v.src.length)));
   go.disabled=false; $("reset").disabled=false; converting=false;
   try{ wakeLock&&wakeLock.release(); }catch(e){} wakeLock=null;
   if(document.hidden && "Notification" in window && Notification.permission==="granted"){
