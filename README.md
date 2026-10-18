@@ -17,6 +17,7 @@ plus les fichiers PWA.
 - **Marges rognées** automatiquement (fond blanc, noir ou crème détecté sur les coins).
 - **Jamais d'étirement** : mise à l'échelle uniforme, la page est centrée sur la
   couleur du papier, à la taille exacte de l'écran (1264×1680 pour la Libra Colour).
+- **Remplir l'écran** (option) : agrandit un peu la page en rognant au plus 3 % par bord, jamais sur un cadre ; bandes restantes blanches, noires ou de la couleur du scan.
 - **Couleur auto** : une page n'est gardée en couleur que si elle en contient
   vraiment ; sinon niveaux de gris + niveaux auto (papier jauni → blanc pur).
   Les pages couleur reçoivent une légère hausse de saturation (écran Kaleido).

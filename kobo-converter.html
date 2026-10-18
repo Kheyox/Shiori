@@ -262,6 +262,14 @@
 
       <div class="card" id="settings">
         <div class="opt">
+          <span class="lab">Cadrage</span>
+          <p class="hint">Remplir agrandit un peu la page en rognant au plus 3 % par bord, jamais sur un cadre.</p>
+          <div class="seg" data-key="fit" role="group" aria-label="Cadrage">
+            <button type="button" data-val="fill">Remplir l'écran</button>
+            <button type="button" data-val="whole">Page entière</button>
+          </div>
+        </div>
+        <div class="opt">
           <span class="lab">Couleur</span>
           <p class="hint">Auto garde la couleur uniquement sur les pages qui en ont.</p>
           <div class="seg" data-key="color" role="group" aria-label="Couleur">
@@ -299,6 +307,8 @@
             <span class="sw"><input type="checkbox" data-key="meta"><i></i></span></label>
           <div class="row"><span>Format de sortie</span>
             <select data-key="format"><option value="kepub">KEPUB (recommandé)</option><option value="cbz">CBZ</option></select></div>
+          <div class="row"><span>Bandes autour de la page</span>
+            <select data-key="bars"><option value="white">Blanches</option><option value="auto">Couleur du scan</option><option value="black">Noires</option></select></div>
           <div class="row"><span>Liseuse</span>
             <select data-key="device">
               <option value="1264x1680">Libra Colour</option>
@@ -693,7 +703,7 @@ function buildProcessor(makeCanvas, toBlob){
   // Le fond est lu dans les 4 coins ; si les coins s'accordent, on rogne tout
   // ce qui est uniformément de cette couleur. Sinon (illustration pleine page)
   // on ne rogne pas.
-  function analyse(bmp,sx,sy,sw,sh,trim){
+  function analyse(bmp,sx,sy,sw,sh,o){
     const SAMP=Math.min(800, Math.max(sw,sh));
     const s=SAMP/Math.max(sw,sh);
     const w=Math.max(2,Math.round(sw*s)), h=Math.max(2,Math.round(sh*s));
@@ -710,28 +720,68 @@ function buildProcessor(makeCanvas, toBlob){
     const agree=Math.max(...ls)-Math.min(...ls) < 40;
     const bgc=corners.reduce((a,c)=>[a[0]+c[0]/4,a[1]+c[1]/4,a[2]+c[2]/4],[0,0,0]).map(Math.round);
     const bg=`rgb(${bgc[0]},${bgc[1]},${bgc[2]})`;
-    const full={sx,sy,sw,sh,bg,trim:[0,0,0,0]};
-    if(!trim || !agree) return full;
 
-    // « Encre » = nettement différent du fond. Les ombres grises de scan, le
-    // bord de page ou le jaunissement (écart faible) ne comptent PAS comme contenu.
-    const bl=lum(bgc[0],bgc[1],bgc[2]), THR=52, MAXC=Math.max(1,Math.round(0.004*Math.max(w,h)));
-    const isInk=i=>Math.abs(lum(d[i],d[i+1],d[i+2])-bl)>THR ||
-      Math.max(Math.abs(d[i]-bgc[0]),Math.abs(d[i+1]-bgc[1]),Math.abs(d[i+2]-bgc[2]))>80;
-    const rowEmpty=y=>{let n=0;for(let x=0;x<w;x++){if(isInk((y*w+x)*4)&&++n>MAXC)return false;}return true;};
-    const colEmpty=x=>{let n=0;for(let y=0;y<h;y++){if(isInk((y*w+x)*4)&&++n>MAXC)return false;}return true;};
     let top=0,bottom=h-1,left=0,right=w-1;
-    while(top<bottom&&rowEmpty(top))top++;
-    while(bottom>top&&rowEmpty(bottom))bottom--;
-    while(left<right&&colEmpty(left))left++;
-    while(right>left&&colEmpty(right))right--;
-    const pad=Math.max(2,Math.round(0.006*Math.max(w,h)));
-    top=Math.max(0,top-pad); left=Math.max(0,left-pad);
-    bottom=Math.min(h-1,bottom+pad); right=Math.min(w-1,right+pad);
-    const bw=right-left+1, bh=bottom-top+1;
-    if(bw<w*0.35||bh<h*0.35) return full;   // page quasi vide : on ne touche à rien
-    return {sx:sx+left/s, sy:sy+top/s, sw:Math.min(sw,bw/s), sh:Math.min(sh,bh/s), bg,
+    if(o.trim && agree){
+      // « Encre » = nettement différent du fond. Les ombres grises de scan, le
+      // bord de page ou le jaunissement (écart faible) ne comptent PAS comme contenu.
+      const bl=lum(bgc[0],bgc[1],bgc[2]), THR=52, MAXC=Math.max(1,Math.round(0.004*Math.max(w,h)));
+      const isInk=i=>Math.abs(lum(d[i],d[i+1],d[i+2])-bl)>THR ||
+        Math.max(Math.abs(d[i]-bgc[0]),Math.abs(d[i+1]-bgc[1]),Math.abs(d[i+2]-bgc[2]))>80;
+      const rowEmpty=y=>{let n=0;for(let x=0;x<w;x++){if(isInk((y*w+x)*4)&&++n>MAXC)return false;}return true;};
+      const colEmpty=x=>{let n=0;for(let y=0;y<h;y++){if(isInk((y*w+x)*4)&&++n>MAXC)return false;}return true;};
+      let t=0,bo=h-1,l=0,r=w-1;
+      while(t<bo&&rowEmpty(t))t++;
+      while(bo>t&&rowEmpty(bo))bo--;
+      while(l<r&&colEmpty(l))l++;
+      while(r>l&&colEmpty(r))r--;
+      const pad=Math.max(2,Math.round(0.006*Math.max(w,h)));
+      t=Math.max(0,t-pad); l=Math.max(0,l-pad); bo=Math.min(h-1,bo+pad); r=Math.min(w-1,r+pad);
+      if(!((r-l+1)<w*0.35||(bo-t+1)<h*0.35)){ top=t; bottom=bo; left=l; right=r; }  // page quasi vide : on ne touche à rien
+    }
+    const box={sx:sx+left/s, sy:sy+top/s, sw:Math.min(sw,(right-left+1)/s), sh:Math.min(sh,(bottom-top+1)/s), bg,
       trim:[top/h, (h-1-bottom)/h, left/w, (w-1-right)/w]};
+
+    if(o.fill){
+      // Zones qu'on peut rogner sans toucher à un cadre : on s'arrête avant toute ligne
+      // de cadre (rangée/colonne majoritairement sombre) ; jamais plus de 3 % par côté.
+      const bw=right-left+1, bh=bottom-top+1, LIM=0.03;
+      const dark=(x,y)=>{ const i=(y*w+x)*4; return lum(d[i],d[i+1],d[i+2])<70; };
+      const rowLine=y=>{ let n=0; for(let x=left;x<=right;x++) if(dark(x,y)) n++; return n/bw>0.45; };
+      const colLine=x=>{ let n=0; for(let y=top;y<=bottom;y++) if(dark(x,y)) n++; return n/bh>0.45; };
+      const scan=(max,test,idx)=>{ let k=0; while(k<max && !test(idx(k))) k++; return k; };
+      const mh=Math.floor(bh*LIM), mw=Math.floor(bw*LIM);
+      box.safe={ t:scan(mh,rowLine,k=>top+k)/bh, b:scan(mh,rowLine,k=>bottom-k)/bh,
+                 l:scan(mw,colLine,k=>left+k)/bw, r:scan(mw,colLine,k=>right-k)/bw };
+    }
+    return box;
+  }
+
+  // « Remplir l'écran » : agrandit la page au-delà du simple ajustement en rognant
+  // un peu les bords sûrs (voir analyse). Aucune déformation.
+  function applyFill(box,o,rot){
+    if(!o.fill||!box.safe) return box;
+    const ew=rot?box.sh:box.sw, eh=rot?box.sw:box.sh;
+    const contain=Math.min(o.tw/ew,o.th/eh);
+    const vertical=(o.th/eh)<=(o.tw/ew);          // limité par la hauteur : bandes sur les côtés
+    // côtés de la source qui correspondent au début/fin de l'axe rogné à l'écran
+    const sides = vertical ? (rot===0?["t","b"]:rot===1?["l","r"]:["r","l"])
+                           : (rot===0?["l","r"]:rot===1?["b","t"]:["t","b"]);
+    const L = vertical ? eh : ew;
+    const f1=box.safe[sides[0]], f2=box.safe[sides[1]], cMax=f1+f2;
+    if(cMax<=0.0005) return box;
+    const sc2 = vertical ? Math.min(o.tw/ew, o.th/(eh*(1-cMax))) : Math.min(o.th/eh, o.tw/(ew*(1-cMax)));
+    if(sc2<=contain*1.002) return box;
+    const c = 1-(vertical? o.th/(eh*sc2) : o.tw/(ew*sc2));   // part de L réellement retirée
+    const nb=Object.assign({},box), srcDim=side=>(side==="t"||side==="b")?box.sh:box.sw;
+    const shrink=(side,frac)=>{
+      const amt=frac*srcDim(side);
+      if(side==="t"){ nb.sy+=amt; nb.sh-=amt; } else if(side==="b"){ nb.sh-=amt; }
+      else if(side==="l"){ nb.sx+=amt; nb.sw-=amt; } else { nb.sw-=amt; }
+    };
+    shrink(sides[0], c*f1/cMax); shrink(sides[1], c*f2/cMax);
+    nb.fillCrop=c;
+    return nb;
   }
 
   // Traitements pixel sur la page finale : N&B, niveaux automatiques,
@@ -787,14 +837,15 @@ function buildProcessor(makeCanvas, toBlob){
   // Pose une région de l'image dans la page de la liseuse : mise à l'échelle
   // UNIFORME (jamais d'étirement), centrée, bords remplis de la couleur du
   // papier. rot: 0, 1 (horaire) ou -1 (anti-horaire).
-  function compose(bmp,box,o,rot){
+  function compose(bmp,box0,o,rot){
+    const box=applyFill(box0,o,rot);
     const ew=rot?box.sh:box.sw, eh=rot?box.sw:box.sh;
-    const trimInfo=box.trim;
+    const trimInfo=box.trim, fillInfo=box.fillCrop||0;
     const sc=Math.min(o.tw/ew, o.th/eh);
     const dw=Math.max(1,Math.round(ew*sc)), dh=Math.max(1,Math.round(eh*sc));
     const x=Math.round((o.tw-dw)/2), y=Math.round((o.th-dh)/2);
     const cv=makeCanvas(o.tw,o.th), ctx=cv.getContext("2d",{willReadFrequently:true});
-    ctx.fillStyle=box.bg; ctx.fillRect(0,0,o.tw,o.th);
+    ctx.fillStyle=o.bars==="white"?"#ffffff":o.bars==="black"?"#000000":box.bg; ctx.fillRect(0,0,o.tw,o.th);
     ctx.imageSmoothingEnabled=true; ctx.imageSmoothingQuality="high";
     ctx.save(); ctx.translate(x,y);
     if(rot===1){ ctx.translate(dw,0); ctx.rotate(Math.PI/2); ctx.drawImage(bmp,box.sx,box.sy,box.sw,box.sh,0,0,dh,dw); }
@@ -802,17 +853,17 @@ function buildProcessor(makeCanvas, toBlob){
     else ctx.drawImage(bmp,box.sx,box.sy,box.sw,box.sh,0,0,dw,dh);
     ctx.restore();
     finish(ctx,o.tw,o.th,o);
-    cv._trim=trimInfo;
+    cv._trim=trimInfo; cv._fill=fillInfo;
     return cv;
   }
 
-  const region=(bmp,sx,sy,sw,sh,o,rot)=>compose(bmp,analyse(bmp,sx,sy,sw,sh,o.trim),o,rot||0);
+  const region=(bmp,sx,sy,sw,sh,o,rot)=>compose(bmp,analyse(bmp,sx,sy,sw,sh,o),o,rot||0);
 
   function processBitmap(bmp,o){
     const isSpread=bmp.width>bmp.height*1.05;
     if(!isSpread || o.dblmode==="keep") return [region(bmp,0,0,bmp.width,bmp.height,o)];
     if(o.dblmode==="rotate"){
-      const full=analyse(bmp,0,0,bmp.width,bmp.height,o.trim);
+      const full=analyse(bmp,0,0,bmp.width,bmp.height,o);
       return [compose(bmp,full,o,o.rotdir==="cw"?1:-1)];
     }
     const half=Math.floor(bmp.width/2);
@@ -917,7 +968,7 @@ function toast(msg,ms=3800){
 }
 
 /* ---------- Réglages (mémorisés) ---------- */
-const DEFAULTS={dest:"dir", color:"auto", rtl:"1", spread:"rotate", rotdir:"cw", format:"kepub", device:"1264x1680",
+const DEFAULTS={fit:"fill", bars:"white", dest:"dir", color:"auto", rtl:"1", spread:"rotate", rotdir:"cw", format:"kepub", device:"1264x1680",
   quality:92, trim:true, sharpen:true, meta:true};
 const LS_KEY="shiori_v2_settings";
 let S={...DEFAULTS};
@@ -927,7 +978,7 @@ const saveSettings=()=>{ try{ localStorage.setItem(LS_KEY,JSON.stringify(S)); }c
 function opts(){
   const [tw,th]=S.device.split("x").map(Number);
   return { tw, th, colorMode:S.color, rtl:S.rtl==="1", dblmode:S.spread, rotdir:S.rotdir,
-    trim:!!S.trim, sharpen:!!S.sharpen, sat:1.18, quality:S.quality/100 };
+    trim:!!S.trim, fill:S.fit==="fill", bars:S.bars, sharpen:!!S.sharpen, sat:1.18, quality:S.quality/100 };
 }
 
 function syncControls(){
@@ -1270,7 +1321,7 @@ async function renderPreview(){
       if(tok!==pv.token) return;
       url=URL.createObjectURL(out);
       const tr=r.canvases[pv.sub]._trim, pc=x=>Math.round(x*100);
-      info=(r.gray?"N&B":"Couleur")+(r.isSpread?" · double page":"")+` · source ${r.srcW}×${r.srcH}`+(tr&&S.trim?` · rogné ↑${pc(tr[0])} ↓${pc(tr[1])} ←${pc(tr[2])} →${pc(tr[3])} %`:"")+(r.count>1?` · écran ${pv.sub+1}/${r.count}`:"");
+      info=(r.gray?"N&B":"Couleur")+(r.isSpread?" · double page":"")+` · source ${r.srcW}×${r.srcH}`+(tr&&S.trim?` · marges ↑${pc(tr[0])} ↓${pc(tr[1])} ←${pc(tr[2])} →${pc(tr[3])} %`:"")+(r.canvases[pv.sub]._fill>0.001?` · rempli (${pc(r.canvases[pv.sub]._fill)} % rogné)`:"")+(r.count>1?` · écran ${pv.sub+1}/${r.count}`:"");
     }
     if(pv.url) URL.revokeObjectURL(pv.url);
     pv.url=url; img.src=url; img.hidden=false; ph.hidden=true;
@@ -1683,59 +1734,6 @@ syncControls();
 </script>
 <script>
 "use strict";
-/* Version de l'app. Le site publie cette valeur dans /version.json (générée au
-   déploiement). L'app de bureau utilise l'auto-updater officiel de Tauri v2. */
-const APP_VERSION="1.1.0";
-const IS_DESKTOP = !!(window.__TAURI_INTERNALS__ || window.__TAURI__);
-
-if(IS_DESKTOP){
-  window.addEventListener("DOMContentLoaded", async () => {
-    try {
-      const updater = window.__TAURI__ && window.__TAURI__.updater;
-      const processApi = window.__TAURI__ && window.__TAURI__.process;
-      if (!updater || !updater.check) return;
-
-      const update = await updater.check();
-      if (update) {
-        const b = document.createElement("div");
-        b.style.cssText = "position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:9999;"+
-          "background:var(--ink);color:#fff;padding:11px 16px;border-radius:12px;display:flex;gap:14px;"+
-          "align-items:center;box-shadow:0 6px 24px rgba(0,0,0,.35);font-size:14px";
-        b.innerHTML = `<span>Shiori ${update.version} est disponible !</span>`;
-        
-        const btn = document.createElement("button");
-        btn.textContent = "Télécharger et installer";
-        btn.style.cssText = "background:#fff;color:var(--ink);border:0;border-radius:8px;padding:6px 13px;font-weight:700;cursor:pointer;font-family:inherit";
-        
-        btn.onclick = async () => {
-          btn.disabled = true;
-          btn.textContent = "Téléchargement en cours...";
-          try {
-            await update.downloadAndInstall();
-            btn.textContent = "Redémarrage de Shiori...";
-            if (processApi && processApi.relaunch) {
-              await processApi.relaunch();
-            }
-          } catch (err) {
-            console.error("Erreur lors de la mise à jour:", err);
-            btn.textContent = "Erreur de mise à jour";
-            btn.disabled = false;
-          }
-        };
-        
-        const later = document.createElement("button");
-        later.textContent = "Plus tard";
-        later.style.cssText = "background:none;border:0;color:#fff;opacity:.7;cursor:pointer;font-family:inherit";
-        later.onclick = () => b.remove();
-        
-        b.append(btn, later);
-        document.body.appendChild(b);
-      }
-    } catch (e) {
-      console.warn("Vérification d'auto-update impossible:", e);
-    }
-  });
-}
 // Enregistre le service worker (hors-ligne + installable). Nécessite un contexte
 // sécurisé : ça marche sur https:// (Firebase) et sur http://localhost.
 if ("serviceWorker" in navigator) {

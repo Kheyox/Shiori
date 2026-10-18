@@ -2,7 +2,7 @@
 
 Shiori reste **un site statique** (un seul fichier HTML + quelques fichiers PWA).
 Firebase Hosting le sert en HTTPS, ce qui le rend accessible partout et
-**installable en PWA** (Windows / Chromebook / Android).
+**installable en PWA** (Windows / Chromebook / Android, depuis le navigateur).
 
 ## 1. Pré-requis (une seule fois)
 
@@ -66,32 +66,13 @@ Hosting* → **Run workflow**.
 > Le JSON du compte de service est sensible : ne le commit jamais dans le dépôt,
 > garde-le uniquement dans le secret GitHub.
 
-## En faire une « vraie app » (Windows / Android)
+## En faire une « vraie app »
 
 ### Windows — déjà prêt
 Ouvre le site dans Chrome ou Edge → bouton **« Installer l'app »**. Shiori
 devient une application fenêtrée avec son icône dans le menu Démarrer.
 Grâce aux `file_handlers` du manifest, tu peux associer les `.cbz` à Shiori :
 clic droit sur un fichier → *Ouvrir avec* → Shiori (après installation).
-
-### Android — APK via PWABuilder (Trusted Web Activity)
-Pour une **application Android installable** (APK, distribuable ou publiable
-sur le Play Store) :
-
-1. Va sur https://www.pwabuilder.com et entre `https://shiori-5be31.web.app`.
-2. Onglet **Android** → **Generate package** (garde le package proposé, ex.
-   `app.web.shiori_5be31.twa`, ou choisis le tien).
-3. PWABuilder te fournit un **APK signé** + l'**empreinte SHA-256** de la
-   clé de signature (fichier `signing.keystore` à conserver !).
-4. Colle cette empreinte dans `.well-known/assetlinks.json` (à la place du
-   placeholder), même package name, puis redéploie (`push` sur `main`).
-   → C'est ce qui fait disparaître la barre d'adresse : Google vérifie que
-   l'app et le site t'appartiennent tous les deux.
-5. Installe l'APK (ou téléverse le `.aab` sur le Play Store, compte
-   développeur 25 $ une fois).
-
-L'app Android profite alors du **partage système** (« Partager → Shiori »
-depuis n'importe quelle app) déclaré dans le manifest.
 
 ## Comment c'est branché
 
@@ -129,50 +110,3 @@ Tu peux aussi **coller l'ID directement dans l'app** : au premier clic sur
 (pas besoin de toucher au code ni de redéployer).
 
 Tant qu'aucun ID n'est fourni, le reste de l'app fonctionne normalement.
-
-## Application Windows (.exe)
-
-Le workflow **Build Windows (.exe)** (`.github/workflows/build-windows.yml`)
-compile une vraie application de bureau (Tauri : fenêtre native + moteur Edge
-WebView2, ~10 Mo) sur une machine Windows de GitHub :
-
-- **À la main** : onglet Actions → *Build Windows (.exe)* → Run workflow →
-  récupère l'artefact `Shiori-Windows` (installateur `.exe`).
-- **Par tag** : `git tag v1.0.1 && git push origin v1.0.1` → build + **Release
-  GitHub** avec le `.exe` téléchargeable.
-
-L'app embarque le convertisseur en local (JSZip et pdf.js vendorisés ⇒
-fonctionne hors-ligne). Limites connues : l'export Google Drive ne marche pas
-dans l'exe (origine OAuth non web) — utiliser le site pour ça ; la lecture des
-.cbr télécharge sa lib au premier usage (internet requis une fois).
-L'exe n'est pas signé : SmartScreen affichera « informations complémentaires »
-au premier lancement (normal pour une app perso).
-
-### Vérificateur de mise à jour de l'exe
-
-L'exe compare sa version (constante `APP_VERSION` dans `kobo-converter.html`,
-figée à la compilation) au `/version.json` du site (généré automatiquement au
-déploiement depuis cette même constante). **Quand tu veux signaler une nouvelle
-version aux exe installés : incrémente `APP_VERSION`** (ex. 1.1.0 → 1.2.0) —
-le site publiera la nouvelle valeur et les anciens exe afficheront le bandeau
-« Télécharger ».
-
-## Application Android (.apk) automatique
-
-Le workflow **Build Android (.apk)** construit l'APK (Trusted Web Activity)
-directement sur GitHub — plus besoin de PWABuilder :
-
-1. **Une fois** : ajoute le secret `ANDROID_KEYSTORE_PASSWORD` (Settings →
-   Secrets → Actions) — un mot de passe fort que tu choisis. Il protège la
-   clé de signature, générée au premier run puis committée (chiffrée par ce
-   mot de passe) pour rester stable.
-2. Lance le workflow (Actions → *Build Android (.apk)* → Run workflow) →
-   artefact **Shiori-Android** (`app-release-signed.apk`) à installer sur le
-   téléphone (autoriser « sources inconnues »).
-3. Le workflow met à jour `.well-known/assetlinks.json` tout seul avec
-   l'empreinte de signature → au déploiement suivant du site, l'app passe en
-   plein écran (sans barre d'adresse).
-
-**Mises à jour : rien à faire.** L'APK affiche le site en direct — chaque
-push sur `main` met à jour l'app instantanément (contrairement à l'exe
-Windows). On ne re-télécharge l'APK que pour changer l'icône/le nom.
