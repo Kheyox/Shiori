@@ -412,6 +412,21 @@ async function getSeriesMetadata(seriesName) {
   const clean = seriesName.trim();
   let result = null;
 
+  // 0. Google Books en français : résumé FR prioritaire (AniList/OpenLibrary sont en anglais)
+  let frInfo = null;
+  try {
+    const url = `https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent('intitle:"' + clean + '"')}&langRestrict=fr&printType=books&maxResults=5`;
+    const res = await fetch(url);
+    if (res.ok) {
+      const data = await res.json();
+      for (const it of (data.items || [])) {
+        const inf = it.volumeInfo;
+        if (inf && inf.language === "fr" && inf.description) { frInfo = inf; break; }
+      }
+    }
+  } catch(e) {}
+  const frDescription = frInfo ? frInfo.description.replace(/<[^>]*>/g, "").trim() : "";
+
   // 1. AniList (Idéal Mangas japonais)
   try {
     const query = `query ($search: String) {
@@ -475,6 +490,12 @@ async function getSeriesMetadata(seriesName) {
         }
       }
     } catch(e) {}
+  }
+
+  // Le résumé français l'emporte sur l'anglais
+  if (frDescription) {
+    if (!result) result = { author: (frInfo.authors || []).join(", "), publisher: frInfo.publisher || "", publishedDate: frInfo.publishedDate || "", genres: frInfo.categories || [] };
+    result.description = frDescription;
   }
 
   // 3. Google Books pour compléter le résumé si manquant
