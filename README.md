@@ -1,6 +1,6 @@
 # 栞 Shiori
 
-Convertisseur de mangas pour liseuses **Kobo** (pensé pour la Libra Colour).
+Convertisseur de mangas pour liseuses **Kobo** (pensé pour la Libra Colour) et **Kindle** (11e génération).
 **100 % local** : tout se passe dans le navigateur via `<canvas>`, rien n'est envoyé.
 
 Un seul fichier HTML statique (`kobo-converter.html`), sans framework ni build,
@@ -22,6 +22,7 @@ plus les fichiers PWA.
   vraiment ; sinon niveaux de gris + niveaux auto (papier jauni → blanc pur).
   Les pages couleur reçoivent une légère hausse de saturation (écran Kaleido).
 - **Doubles pages** : pivoter, couper en 2 ou laisser.
+- **Kindle** : choisir « Kindle 11e génération » dans *Plus d'options → Liseuse* (1072×1448, niveaux de gris, fichier `.epub` à envoyer via Send to Kindle ou Calibre).
 - Sortie **KEPUB** (ou CBZ) avec série, numéro de tome, sens RTL, et auteur/résumé récupérés en ligne (désactivable).
 
 ## Lancer en local

@@ -208,7 +208,7 @@
   <header>
     <div class="brand">
       <div class="mark" aria-hidden="true">栞</div>
-      <div><h1>Shiori</h1><p>Manga → Kobo Libra Colour</p></div>
+      <div><h1>Shiori</h1><p>Manga → Kobo &amp; Kindle</p></div>
     </div>
     <div class="head-actions">
       <button id="install-btn" class="chip hidden" type="button">Installer l'app</button>
@@ -237,7 +237,7 @@
     <div class="stage">
       <div class="stage-top">
         <div class="seg small" id="view-seg" role="group" aria-label="Aperçu">
-          <button type="button" data-val="kobo" aria-pressed="true">Sur ta Kobo</button>
+          <button type="button" data-val="kobo" aria-pressed="true">Sur ta liseuse</button>
           <button type="button" data-val="orig" aria-pressed="false">Original</button>
         </div>
       </div>
@@ -309,10 +309,11 @@
             <select data-key="format"><option value="kepub">KEPUB (recommandé)</option><option value="cbz">CBZ</option></select></div>
           <div class="row"><span>Bandes autour de la page</span>
             <select data-key="bars"><option value="white">Blanches</option><option value="auto">Couleur du scan</option><option value="black">Noires</option></select></div>
-          <div class="row"><span>Liseuse</span>
+          <div class="row"><span>Liseuse<small>Kindle : toujours en niveaux de gris, fichier .epub à envoyer via « Send to Kindle »</small></span>
             <select data-key="device">
               <option value="1264x1680">Libra Colour</option>
               <option value="1072x1448">Clara Colour / BW</option>
+              <option value="kindle-1072x1448">Kindle 11e génération (noir &amp; blanc)</option>
               <option value="1440x1920">Sage</option>
               <option value="1404x1872">Elipsa 2E</option>
             </select></div>
@@ -975,9 +976,15 @@ let S={...DEFAULTS};
 try{ Object.assign(S, JSON.parse(localStorage.getItem(LS_KEY)||"{}")); }catch(e){}
 const saveSettings=()=>{ try{ localStorage.setItem(LS_KEY,JSON.stringify(S)); }catch(e){} };
 
+// Profils de liseuse : "LxH" (Kobo) ou "kindle-LxH" (écran e-ink N&B, sortie .epub)
+function devInfo(){
+  const kindle=String(S.device).startsWith("kindle-");
+  const [tw,th]=String(S.device).replace("kindle-","").split("x").map(Number);
+  return { tw, th, kindle };
+}
 function opts(){
-  const [tw,th]=S.device.split("x").map(Number);
-  return { tw, th, colorMode:S.color, rtl:S.rtl==="1", dblmode:S.spread, rotdir:S.rotdir,
+  const {tw,th,kindle}=devInfo();
+  return { tw, th, colorMode:kindle?"gray":S.color, rtl:S.rtl==="1", dblmode:S.spread, rotdir:S.rotdir,
     trim:!!S.trim, fill:S.fit==="fill", bars:S.bars, sharpen:!!S.sharpen, sat:1.18, quality:S.quality/100 };
 }
 
@@ -990,7 +997,7 @@ function syncControls(){
   document.querySelectorAll("select[data-key]").forEach(i=>{ i.value=S[i.dataset.key]; });
   document.querySelectorAll("input[type=range][data-key]").forEach(i=>{ i.value=S[i.dataset.key]; });
   $("q-val").textContent=S.quality+" %";
-  const [w,h]=S.device.split("x");
+  const {tw:w,th:h}=devInfo();
   $("device").style.setProperty("--ar",`${w}/${h}`);
   $("pv-dev").textContent=`${w}×${h}`;
 }
@@ -1558,7 +1565,7 @@ async function runConvert(){
   // Un verrou Web tenu pendant la conversion évite le bridage « intensif » de l'onglet en arrière-plan.
   let releaseLock=null;
   try{ if(navigator.locks) navigator.locks.request("shiori-convert",()=>new Promise(r=>{ releaseLock=r; })); }catch(e){}
-  const o=opts(), ext=S.format==="kepub"?".kepub.epub":".cbz";
+  const o=opts(), ext=S.format==="kepub"?(devInfo().kindle?".epub":".kepub.epub"):".cbz";
   const go=$("convert"); go.disabled=true;
   $("reset").disabled=true;
   $("results").innerHTML=""; $("after").innerHTML="";
