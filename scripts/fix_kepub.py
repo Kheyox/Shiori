@@ -31,9 +31,10 @@ HTML_IMG_RE = re.compile(
 )
 
 
-def build_clean_xhtml(title: str, img_src: str, width: int, height: int) -> str:
+def build_clean_xhtml(title: str, img_src: str, width: int, height: int, pad_y: int = 0) -> str:
     safe_title = html.escape(title.strip()) if title else "Page"
     safe_src = html.escape(img_src.strip(), quote=True)
+    img_h = max(1, height - 2 * pad_y)
     return (
         '<?xml version="1.0" encoding="utf-8"?>\n'
         '<!DOCTYPE html>\n'
@@ -44,7 +45,7 @@ def build_clean_xhtml(title: str, img_src: str, width: int, height: int) -> str:
         '  <style type="text/css">\n'
         "    @page { margin: 0; padding: 0; }\n"
         f"    html, body {{ margin: 0; padding: 0; width: {width}px; height: {height}px; background-color: #ffffff; overflow: hidden; }}\n"
-        f"    img {{ display: block; width: {width}px; height: {height}px; margin: 0; padding: 0; object-fit: contain; }}\n"
+        f"    img {{ display: block; width: {width}px; height: {img_h}px; margin: {pad_y}px 0; padding: 0; object-fit: contain; }}\n"
         "  </style>\n"
         "</head>\n"
         "<body>\n"
@@ -54,7 +55,9 @@ def build_clean_xhtml(title: str, img_src: str, width: int, height: int) -> str:
     )
 
 
-def fix_xhtml_page(raw_bytes: bytes, default_w: int, default_h: int) -> tuple[bytes, bool]:
+def fix_xhtml_page(
+    raw_bytes: bytes, default_w: int, default_h: int, pad_y: int = 0
+) -> tuple[bytes, bool]:
     text = raw_bytes.decode("utf-8", errors="replace")
 
     img_match = SVG_IMG_RE.search(text) or HTML_IMG_RE.search(text)
@@ -73,7 +76,7 @@ def fix_xhtml_page(raw_bytes: bytes, default_w: int, default_h: int) -> tuple[by
     title_match = TITLE_RE.search(text)
     title = html.unescape(title_match.group(1)) if title_match else "Page"
 
-    new_xhtml = build_clean_xhtml(title, img_src, width, height)
+    new_xhtml = build_clean_xhtml(title, img_src, width, height, pad_y=pad_y)
     return new_xhtml.encode("utf-8"), True
 
 
@@ -82,6 +85,7 @@ def fix_kepub_file(
     dst_path: Path,
     default_w: int = 1264,
     default_h: int = 1680,
+    pad_y: int = 0,
 ) -> int:
     dst_path.parent.mkdir(parents=True, exist_ok=True)
     fixed_pages = 0
@@ -119,7 +123,7 @@ def fix_kepub_file(
                 if lower_name.endswith((".xhtml", ".html")) and not lower_name.endswith(
                     "nav.xhtml"
                 ):
-                    data, changed = fix_xhtml_page(data, default_w, default_h)
+                    data, changed = fix_xhtml_page(data, default_w, default_h, pad_y=pad_y)
                     if changed:
                         fixed_pages += 1
 
@@ -191,6 +195,12 @@ def main() -> int:
         default=1680,
         help="Fallback viewport height if missing (default: 1680).",
     )
+    parser.add_argument(
+        "--pad-y",
+        type=int,
+        default=0,
+        help="Top/bottom breathing margin in pixels inside the viewport (default: 0).",
+    )
 
     args = parser.parse_args()
     targets = collect_inputs(args.inputs, args.recursive)
@@ -202,7 +212,7 @@ def main() -> int:
 
     for src in targets:
         dst = src if args.in_place else (out_dir / src.name)
-        pages = fix_kepub_file(src, dst, args.width, args.height)
+        pages = fix_kepub_file(src, dst, args.width, args.height, pad_y=args.pad_y)
         print(f"[OK] {src.name} -> {dst} ({pages} pages corrigées)")
 
     return 0
