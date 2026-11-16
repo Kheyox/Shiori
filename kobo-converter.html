@@ -547,20 +547,18 @@ function generateKepubPackage({title, series, number, author, description, publi
 
     const xhtmlContent = `<?xml version="1.0" encoding="utf-8"?>
 <!DOCTYPE html>
-<html xmlns="http://www.w3.org/1999/xhtml">
+<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">
 <head>
   <title>${esc(title)} - Page ${i}</title>
   <meta name="viewport" content="width=${tw}, height=${th}"/>
   <style type="text/css">
     @page { margin: 0; padding: 0; }
-    html, body { margin: 0; padding: 0; width: 100%; height: 100%; background-color: #ffffff; overflow: hidden; display: flex; justify-content: center; align-items: center; }
-    svg { width: 100%; height: 100%; display: block; margin: 0 auto; }
+    html, body { margin: 0; padding: 0; width: ${tw}px; height: ${th}px; background-color: #ffffff; overflow: hidden; }
+    img { display: block; width: ${tw}px; height: ${th}px; margin: 0; padding: 0; object-fit: contain; }
   </style>
 </head>
 <body>
-  <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" version="1.1" viewBox="0 0 ${tw} ${th}" width="100%" height="100%">
-    <image width="${tw}" height="${th}" xlink:href="../images/${imgName}" href="../images/${imgName}"/>
-  </svg>
+  <img src="../images/${imgName}" alt="Page ${i}"/>
 </body>
 </html>`;
     zip.file(`OEBPS/${xhtmlName}`, xhtmlContent);
