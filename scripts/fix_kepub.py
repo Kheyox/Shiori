@@ -9,11 +9,18 @@ sized to the page's viewport (e.g. 1264x1680).
 
 import argparse
 import html
+import io
 import re
 import sys
 import tempfile
 import zipfile
 from pathlib import Path
+
+try:
+    from PIL import Image, ImageChops
+except ImportError:
+    Image = None
+    ImageChops = None
 
 VIEWPORT_RE = re.compile(
     r'<meta\s+[^>]*name=["\']viewport["\'][^>]*content=["\']([^"\']+)["\']',
@@ -80,12 +87,40 @@ def fix_xhtml_page(
     return new_xhtml.encode("utf-8"), True
 
 
+def is_grayscale_rgb(im) -> bool:
+    if im.mode == "L":
+        return True
+    if im.mode != "RGB" or ImageChops is None:
+        return False
+    small = im.resize((160, 220), Image.Resampling.BILINEAR)
+    r, g, b = small.split()
+    rg = ImageChops.difference(r, g).getextrema()[1]
+    gb = ImageChops.difference(g, b).getextrema()[1]
+    return max(rg, gb) <= 8
+
+
+def optimize_image_bytes(data: bytes, quality: int = 82) -> bytes:
+    if Image is None:
+        return data
+    im = Image.open(io.BytesIO(data))
+    if im.mode not in ("L", "RGB"):
+        im = im.convert("RGB")
+    if im.mode == "RGB" and is_grayscale_rgb(im):
+        im = im.convert("L")
+    buf = io.BytesIO()
+    im.save(buf, format="JPEG", quality=quality, optimize=True, progressive=False)
+    out = buf.getvalue()
+    return out if len(out) < len(data) else data
+
+
 def fix_kepub_file(
     src_path: Path,
     dst_path: Path,
     default_w: int = 1264,
     default_h: int = 1680,
     pad_y: int = 0,
+    optimize_jpeg: bool = False,
+    quality: int = 82,
 ) -> int:
     dst_path.parent.mkdir(parents=True, exist_ok=True)
     fixed_pages = 0
@@ -126,6 +161,8 @@ def fix_kepub_file(
                     data, changed = fix_xhtml_page(data, default_w, default_h, pad_y=pad_y)
                     if changed:
                         fixed_pages += 1
+                elif optimize_jpeg and lower_name.endswith((".jpg", ".jpeg")):
+                    data = optimize_image_bytes(data, quality=quality)
 
                 # Store already-compressed JPEG/PNG/WebP without recompression for speed
                 compress = (
