@@ -871,18 +871,29 @@ function buildProcessor(makeCanvas, toBlob){
     const ew=rot?box.sh:box.sw, eh=rot?box.sw:box.sh;
     const trimInfo=box.trim, fillInfo=box.fillCrop||0;
     const sc=Math.min(o.tw/ew, o.th/eh);
-    const dw=Math.max(1,Math.round(ew*sc)), dh=Math.max(1,Math.round(eh*sc));
-    const x=Math.round((o.tw-dw)/2), y=Math.round((o.th-dh)/2);
-    const cv=makeCanvas(o.tw,o.th), ctx=cv.getContext("2d",{willReadFrequently:true});
-    ctx.fillStyle=o.bars==="white"?"#ffffff":o.bars==="black"?"#000000":box.bg; ctx.fillRect(0,0,o.tw,o.th);
+    let ctw,cth,dw,dh,doSharpen,effQuality;
+    if(sc>1.0){
+      ctw=Math.max(2,Math.round(o.tw/sc)); cth=Math.max(2,Math.round(o.th/sc));
+      dw=Math.max(1,Math.min(ctw,Math.round(ew))); dh=Math.max(1,Math.min(cth,Math.round(eh)));
+      doSharpen=false;
+      effQuality=Math.min(o.quality,0.78);
+    } else {
+      ctw=o.tw; cth=o.th;
+      dw=Math.max(1,Math.round(ew*sc)); dh=Math.max(1,Math.round(eh*sc));
+      doSharpen=!!o.sharpen && (sc<0.96);
+      effQuality=o.quality;
+    }
+    const x=Math.round((ctw-dw)/2), y=Math.round((cth-dh)/2);
+    const cv=makeCanvas(ctw,cth), ctx=cv.getContext("2d",{willReadFrequently:true});
+    ctx.fillStyle=o.bars==="white"?"#ffffff":o.bars==="black"?"#000000":box.bg; ctx.fillRect(0,0,ctw,cth);
     ctx.imageSmoothingEnabled=true; ctx.imageSmoothingQuality="high";
     ctx.save(); ctx.translate(x,y);
     if(rot===1){ ctx.translate(dw,0); ctx.rotate(Math.PI/2); ctx.drawImage(bmp,box.sx,box.sy,box.sw,box.sh,0,0,dh,dw); }
     else if(rot===-1){ ctx.translate(0,dh); ctx.rotate(-Math.PI/2); ctx.drawImage(bmp,box.sx,box.sy,box.sw,box.sh,0,0,dh,dw); }
     else ctx.drawImage(bmp,box.sx,box.sy,box.sw,box.sh,0,0,dw,dh);
     ctx.restore();
-    finish(ctx,o.tw,o.th,o);
-    cv._trim=trimInfo; cv._fill=fillInfo;
+    finish(ctx,ctw,cth,doSharpen===o.sharpen?o:Object.assign({},o,{sharpen:doSharpen}));
+    cv._trim=trimInfo; cv._fill=fillInfo; cv._quality=effQuality;
     return cv;
   }
 
@@ -909,7 +920,7 @@ function buildProcessor(makeCanvas, toBlob){
     const isSpread=bmp.width>bmp.height*1.05;
     const canvases=processBitmap(bmp,o2);
     const res={count:canvases.length, isSpread, gray, srcW:bmp.width, srcH:bmp.height};
-    if(asBlobs){ res.blobs=[]; for(const cv of canvases) res.blobs.push(await toBlob(cv,o.quality)); }
+    if(asBlobs){ res.blobs=[]; for(const cv of canvases) res.blobs.push(await toBlob(cv,cv._quality??o.quality)); }
     else res.canvases=canvases;
     if(bmp.close) bmp.close();
     return res;
@@ -1047,7 +1058,7 @@ document.querySelectorAll("input[type=range][data-key]").forEach(i=>i.addEventLi
 // parseName(raw) → { series, tome, episode } (voir plus haut)
 function autoName(raw){
   let {series,tome}=parseName(raw);
-  series=series.replace(/[._]+/g," ").replace(/s+/g," ").trim();
+  series=series.replace(/[._]+/g," ").replace(/\s+/g," ").trim();
   if(tome==null) return series||raw;
   return `${series} - Tome ${String(tome).padStart(2,"0")}`;
 }

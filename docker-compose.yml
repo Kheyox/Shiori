@@ -1,0 +1,10 @@
+services:
+  shiori:
+    image: nginx:alpine
+    container_name: shiori-web
+    restart: unless-stopped
+    ports:
+      - "8180:80"
+    volumes:
+      - ./:/usr/share/nginx/html:ro
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
