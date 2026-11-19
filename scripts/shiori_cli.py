@@ -709,20 +709,26 @@ def read_archive_pages(src_archive: Path, cfg: dict) -> list[tuple[int, bytes, d
             )
             return [(idx, zin.read(name), cfg) for idx, name in enumerate(page_names)]
 
-    # Fallback universel : archive RAR (même renommée .cbz) ou 7z
+    # Fallback universel : PDF (via pdftoppm) ou archive RAR/7z (même renommée .cbz)
     import shutil, subprocess, tempfile
     tmp_dir = Path(tempfile.mkdtemp(prefix="shiori_ext_"))
     try:
-        res = subprocess.run(
-            ["unrar", "x", "-y", "-inul", str(src_archive), f"{tmp_dir}/"],
-            check=False,
-        )
-        if res.returncode != 0:
+        if src_archive.suffix.lower() == ".pdf":
             subprocess.run(
-                ["7z", "x", "-y", f"-o{tmp_dir}", str(src_archive)],
+                ["pdftoppm", "-jpeg", "-r", "200", str(src_archive), str(tmp_dir / "page")],
                 check=True,
-                stdout=subprocess.DEVNULL,
             )
+        else:
+            res = subprocess.run(
+                ["unrar", "x", "-y", "-inul", str(src_archive), f"{tmp_dir}/"],
+                check=False,
+            )
+            if res.returncode != 0:
+                subprocess.run(
+                    ["7z", "x", "-y", f"-o{tmp_dir}", str(src_archive)],
+                    check=True,
+                    stdout=subprocess.DEVNULL,
+                )
         img_paths = sorted(
             [
                 p
@@ -738,7 +744,13 @@ def read_archive_pages(src_archive: Path, cfg: dict) -> list[tuple[int, bytes, d
         shutil.rmtree(tmp_dir, ignore_errors=True)
 
 
-def convert_volume(src_cbz: Path, out_dir: Path, workers: int = 6, series_override: str | None = None) -> Path:
+def convert_volume(
+    src_cbz: Path,
+    out_dir: Path,
+    workers: int = 2,
+    series_override: str | None = None,
+    color_mode: str = "auto",
+) -> Path:
     t0 = time.time()
     raw = re.sub(r"\.(cbz|zip|cbr|rar|epub)$", "", src_cbz.name, flags=re.IGNORECASE)
     parsed = parse_name(raw)
@@ -758,12 +770,12 @@ def convert_volume(src_cbz: Path, out_dir: Path, workers: int = 6, series_overri
     cfg = {
         "tw": 1264,
         "th": 1680,
-        "color": "auto",
+        "color": color_mode,
         "rtl": True,
         "spread": "rotate",
         "rotdir": "cw",
         "trim": True,
-        "fill": True,
+        "fill": False,
         "bars": "white",
         "sharpen": True,
         "sat": 1.18,
