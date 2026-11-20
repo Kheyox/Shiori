@@ -179,6 +179,65 @@ def get_series_metadata(series_name: str, comic: bool = False) -> dict | None:
         except Exception:
             pass
 
+    if result is None or not result.get("author"):
+        try:
+            ol_url = (
+                "https://openlibrary.org/search.json?"
+                + urllib.parse.urlencode({"title": clean, "limit": 3})
+            )
+            req = urllib.request.Request(ol_url, headers={"User-Agent": "Shiori/2.0"})
+            with urllib.request.urlopen(req, timeout=6) as resp:
+                ol = json.loads(resp.read().decode("utf-8"))
+                docs = ol.get("docs") or []
+                if docs:
+                    doc = docs[0]
+                    authors = doc.get("author_name") or []
+                    author = ", ".join(authors[:2])
+                    if result is None:
+                        result = {
+                            "author": author,
+                            "description": "",
+                            "publisher": (doc.get("publisher") or [""])[0],
+                            "publishedDate": str(doc.get("first_publish_year") or ""),
+                            "genres": [],
+                        }
+                    elif not result.get("author") and author:
+                        result["author"] = author
+        except Exception:
+            pass
+
+    if result is None or not result.get("description"):
+        try:
+            gb_url = (
+                "https://www.googleapis.com/books/v1/volumes?"
+                + urllib.parse.urlencode({"q": f'intitle:"{clean}"', "maxResults": 3})
+            )
+            req = urllib.request.Request(gb_url, headers={"User-Agent": "Shiori/2.0"})
+            with urllib.request.urlopen(req, timeout=6) as resp:
+                gb = json.loads(resp.read().decode("utf-8"))
+                items = gb.get("items") or []
+                for item in items:
+                    info = item.get("volumeInfo") or {}
+                    desc = (info.get("description") or "").strip()
+                    authors = ", ".join(info.get("authors") or [])
+                    if desc or authors:
+                        if result is None:
+                            result = {
+                                "author": authors,
+                                "description": desc,
+                                "publisher": info.get("publisher") or "",
+                                "publishedDate": info.get("publishedDate") or "",
+                                "genres": info.get("categories") or [],
+                            }
+                        else:
+                            if not result.get("description") and desc:
+                                result["description"] = desc
+                            if not result.get("author") and authors:
+                                result["author"] = authors
+                        break
+        except Exception:
+            pass
+
     _META_CACHE[key] = result
     return result
 
@@ -344,7 +403,48 @@ def apply_fill(box: dict, tw: int, th: int, fill: bool, rot: int) -> dict:
     return nb
 
 
-def finish_array(arr: np.ndarray, gray: bool, sat: float, sharpen: bool) -> np.ndarray:
+def _apply_color_levels(f: np.ndarray) -> np.ndarray:
+    """BD/Comics couleur : ramène le papier crème/jauni au blanc neutre sans altérer les teintes."""
+    h, w, _ = f.shape
+    n = w * h
+    y = np.clip((f[:, :, 0] * 0.299 + f[:, :, 1] * 0.587 + f[:, :, 2] * 0.114).astype(np.int32), 0, 255)
+    hist = np.bincount(y.ravel(), minlength=256)
+    acc = 0
+    lo = 0
+    for v in range(256):
+        acc += hist[v]
+        if acc >= n * 0.004:
+            lo = v
+            break
+    acc = 0
+    hi = 255
+    for v in range(255, -1, -1):
+        acc += hist[v]
+        if acc >= n * 0.04:
+            hi = v
+            break
+    lo = min(lo, 45)
+    hi = max(hi, 200)
+    if hi - lo <= 60:
+        return f
+    mask = y >= hi
+    if np.any(mask):
+        c = f[mask].mean(axis=0)
+        if float(c.max() - c.min()) <= 40.0:
+            wp = np.maximum(c, lo + 60.0)
+        else:
+            wp = np.array([hi, hi, hi], dtype=np.float32)
+    else:
+        wp = np.array([hi, hi, hi], dtype=np.float32)
+    out = np.empty_like(f)
+    for ch in range(3):
+        out[:, :, ch] = np.clip((f[:, :, ch] - lo) / (wp[ch] - lo) * 255.0, 0.0, 255.0)
+    return out
+
+
+def finish_array(
+    arr: np.ndarray, gray: bool, sat: float, sharpen: bool, color_levels: bool = False
+) -> np.ndarray:
     # arr is uint8 (th, tw, 3)
     h, w, _ = arr.shape
     n = w * h
@@ -381,6 +481,8 @@ def finish_array(arr: np.ndarray, gray: bool, sat: float, sharpen: bool) -> np.n
             y_u8 = y.astype(np.uint8)
         out = np.stack([y_u8, y_u8, y_u8], axis=2)
     else:
+        if color_levels:
+            f = _apply_color_levels(f)
         y = f[:, :, 0] * 0.299 + f[:, :, 1] * 0.587 + f[:, :, 2] * 0.114
         y3 = y[:, :, None]
         out = np.clip(np.round(y3 + (f - y3) * sat), 0, 255).astype(np.uint8)
@@ -416,6 +518,7 @@ def compose_canvas(
     sat: float,
     sharpen: bool,
     quality: int,
+    color_levels: bool = False,
 ) -> bytes:
     box = apply_fill(box0, tw, th, fill, rot)
     ew = box["sh"] if rot else box["sw"]
@@ -467,7 +570,9 @@ def compose_canvas(
     canvas.paste(resized, (x, y))
 
     arr = np.asarray(canvas, dtype=np.uint8)
-    arr_out = finish_array(arr, gray=gray, sat=sat, sharpen=do_sharpen)
+    arr_out = finish_array(
+        arr, gray=gray, sat=sat, sharpen=do_sharpen, color_levels=color_levels
+    )
 
     if gray:
         final_img = Image.fromarray(arr_out[:, :, 0], mode="L")
@@ -486,6 +591,7 @@ def process_single_page(args_tuple) -> tuple[int, list[bytes], bool, bool]:
 
     gray = decide_gray(im, cfg["color"])
     sat = 1.0 if gray else cfg["sat"]
+    color_levels = (not gray) and bool(cfg.get("comic", False))
     is_spread = im.width > im.height * 1.05
 
     tw, th = cfg["tw"], cfg["th"]
@@ -497,23 +603,23 @@ def process_single_page(args_tuple) -> tuple[int, list[bytes], bool, bool]:
     if not is_spread or dblmode == "keep":
         box = analyse_region(im, 0, 0, im.width, im.height, trim, fill)
         blobs.append(
-            compose_canvas(im, box, tw, th, fill, bars, 0, gray, sat, sharpen, quality)
+            compose_canvas(im, box, tw, th, fill, bars, 0, gray, sat, sharpen, quality, color_levels)
         )
     elif dblmode == "rotate":
         box = analyse_region(im, 0, 0, im.width, im.height, trim, fill)
         rot = 1 if rotdir == "cw" else -1
         blobs.append(
-            compose_canvas(im, box, tw, th, fill, bars, rot, gray, sat, sharpen, quality)
+            compose_canvas(im, box, tw, th, fill, bars, rot, gray, sat, sharpen, quality, color_levels)
         )
     else:
         half = im.width // 2
         box_l = analyse_region(im, 0, 0, half, im.height, trim, fill)
         box_r = analyse_region(im, half, 0, im.width - half, im.height, trim, fill)
         blob_l = compose_canvas(
-            im, box_l, tw, th, fill, bars, 0, gray, sat, sharpen, quality
+            im, box_l, tw, th, fill, bars, 0, gray, sat, sharpen, quality, color_levels
         )
         blob_r = compose_canvas(
-            im, box_r, tw, th, fill, bars, 0, gray, sat, sharpen, quality
+            im, box_r, tw, th, fill, bars, 0, gray, sat, sharpen, quality, color_levels
         )
         blobs = [blob_r, blob_l] if rtl else [blob_l, blob_r]
 
@@ -750,7 +856,12 @@ def convert_volume(
     workers: int = 2,
     series_override: str | None = None,
     color_mode: str = "auto",
+    comic: bool = False,
+    rtl: bool | None = None,
+    spread: str = "rotate",
 ) -> Path:
+    if rtl is None:
+        rtl = not comic
     t0 = time.time()
     raw = re.sub(r"\.(cbz|zip|cbr|rar|epub)$", "", src_cbz.name, flags=re.IGNORECASE)
     parsed = parse_name(raw)
@@ -771,9 +882,10 @@ def convert_volume(
         "tw": 1264,
         "th": 1680,
         "color": color_mode,
-        "rtl": True,
-        "spread": "rotate",
-        "rotdir": "cw",
+        "comic": comic,
+        "rtl": rtl,
+        "spread": spread,
+        "rotdir": "ccw",
         "trim": True,
         "fill": False,
         "bars": "white",
@@ -802,7 +914,7 @@ def convert_volume(
                 spread_cnt += 1
 
     all_images = [b for sub in results if sub for b in sub]
-    meta = get_series_metadata(parsed["series"], comic=False)
+    meta = get_series_metadata(parsed["series"], comic=comic)
 
     generate_kepub(
         dst_path=dst_path,
@@ -813,7 +925,7 @@ def convert_volume(
         images=all_images,
         tw=1264,
         th=1680,
-        rtl=True,
+        rtl=rtl,
     )
 
     dt = time.time() - t0
@@ -831,8 +943,25 @@ def main():
     parser.add_argument("input", type=Path, help="Fichier CBZ/ZIP à convertir")
     parser.add_argument("-o", "--out-dir", type=Path, required=True, help="Dossier de sortie")
     parser.add_argument("-w", "--workers", type=int, default=max(2, os.cpu_count() or 4), help="Nombre de workers")
+    parser.add_argument("--profil", choices=["manga", "bd"], default="manga", help="Profil de conversion (manga ou bd)")
+    parser.add_argument("--comic", action="store_true", help="Alias pour --profil bd (lecture G->D, color_levels, OpenLibrary/Google Books)")
+    parser.add_argument("--rtl", dest="rtl", action="store_true", default=None, help="Forcer lecture droite -> gauche")
+    parser.add_argument("--ltr", dest="rtl", action="store_false", help="Forcer lecture gauche -> droite")
+    parser.add_argument("--spread", choices=["rotate", "split", "keep"], default="rotate", help="Gestion des doubles pages")
+    parser.add_argument("--color", choices=["auto", "color", "gray"], default="auto", help="Mode couleur")
+    parser.add_argument("--series", type=str, default=None, help="Nom de série forcé")
     args = parser.parse_args()
-    convert_volume(args.input, args.out_dir, workers=args.workers)
+    is_comic = args.comic or (args.profil == "bd")
+    convert_volume(
+        args.input,
+        args.out_dir,
+        workers=args.workers,
+        series_override=args.series,
+        color_mode=args.color,
+        comic=is_comic,
+        rtl=args.rtl,
+        spread=args.spread,
+    )
 
 
 if __name__ == "__main__":
