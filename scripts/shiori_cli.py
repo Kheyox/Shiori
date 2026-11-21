@@ -118,6 +118,65 @@ def safe_file(n: str) -> str:
 _META_CACHE = {}
 
 
+def _translate_to_fr(text: str) -> str:
+    """Traduit un résumé anglais en français via MyMemory (découpé par tranches <= 450 car.)."""
+    if not text or not text.strip():
+        return ""
+    chunks = []
+    cur = ""
+    for word in text.split(" "):
+        if len(cur) + len(word) + 1 > 450:
+            if cur:
+                chunks.append(cur)
+            cur = word
+        else:
+            cur = f"{cur} {word}".strip()
+    if cur:
+        chunks.append(cur)
+
+    out_parts = []
+    for chunk in chunks:
+        try:
+            url = "https://api.mymemory.translated.net/get?" + urllib.parse.urlencode(
+                {"q": chunk, "langpair": "en|fr"}
+            )
+            req = urllib.request.Request(url, headers={"User-Agent": "Shiori/2.0"})
+            with urllib.request.urlopen(req, timeout=6) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+                tr = ((data.get("responseData") or {}).get("translatedText") or "").strip()
+                if not tr or "MYMEMORY WARNING" in tr.upper():
+                    return ""
+                out_parts.append(tr)
+        except Exception:
+            return ""
+    return " ".join(out_parts).strip()
+
+
+def _wikipedia_fr_summary(title: str, comic: bool = False) -> str:
+    """Récupère un résumé en français sur Wikipédia FR en fallback."""
+    try:
+        q = f"{title} {'bande dessinée' if comic else 'manga'}"
+        wp_url = "https://fr.wikipedia.org/w/api.php?" + urllib.parse.urlencode(
+            {"action": "query", "list": "search", "srsearch": q, "format": "json", "srlimit": 1}
+        )
+        req = urllib.request.Request(wp_url, headers={"User-Agent": "Shiori/2.0"})
+        with urllib.request.urlopen(req, timeout=6) as resp:
+            wp = json.loads(resp.read().decode("utf-8"))
+        hits = (wp.get("query") or {}).get("search") or []
+        if not hits:
+            return ""
+        page_title = hits[0]["title"]
+        sum_url = "https://fr.wikipedia.org/api/rest_v1/page/summary/" + urllib.parse.quote(
+            page_title.replace(" ", "_")
+        )
+        req2 = urllib.request.Request(sum_url, headers={"User-Agent": "Shiori/2.0"})
+        with urllib.request.urlopen(req2, timeout=6) as resp2:
+            data = json.loads(resp2.read().decode("utf-8"))
+        return (data.get("extract") or "").strip()
+    except Exception:
+        return ""
+
+
 def get_series_metadata(series_name: str, comic: bool = False) -> dict | None:
     if not series_name:
         return None
@@ -237,6 +296,17 @@ def get_series_metadata(series_name: str, comic: bool = False) -> dict | None:
                         break
         except Exception:
             pass
+
+    if result is not None:
+        desc = (result.get("description") or "").strip()
+        if desc:
+            fr_desc = _translate_to_fr(desc) or _wikipedia_fr_summary(clean, comic=comic)
+            if fr_desc:
+                result["description"] = fr_desc
+        else:
+            fr_desc = _wikipedia_fr_summary(clean, comic=comic)
+            if fr_desc:
+                result["description"] = fr_desc
 
     _META_CACHE[key] = result
     return result

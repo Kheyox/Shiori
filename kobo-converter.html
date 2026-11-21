@@ -510,6 +510,48 @@ async function getSeriesMetadata(seriesName, comic) {
     } catch(e) {}
   }
 
+  if (result) {
+    const desc = (result.description || "").trim();
+    const trFr = async (txt) => {
+      if (!txt) return "";
+      const chunks = [];
+      let cur = "";
+      for (const w of txt.split(" ")) {
+        if (cur.length + w.length + 1 > 450) { if (cur) chunks.push(cur); cur = w; }
+        else cur = cur ? cur + " " + w : w;
+      }
+      if (cur) chunks.push(cur);
+      const out = [];
+      for (const c of chunks) {
+        try {
+          const r = await fetch("https://api.mymemory.translated.net/get?q=" + encodeURIComponent(c) + "&langpair=en|fr");
+          if (!r.ok) return "";
+          const j = await r.json();
+          const t = (j.responseData && j.responseData.translatedText || "").trim();
+          if (!t || /MYMEMORY WARNING/i.test(t)) return "";
+          out.push(t);
+        } catch(e) { return ""; }
+      }
+      return out.join(" ").trim();
+    };
+    const wikiFr = async () => {
+      try {
+        const q = clean + (comic ? " bande dessinée" : " manga");
+        const r = await fetch("https://fr.wikipedia.org/w/api.php?action=query&list=search&srsearch=" + encodeURIComponent(q) + "&format=json&srlimit=1&origin=*");
+        if (!r.ok) return "";
+        const j = await r.json();
+        const hits = j.query && j.query.search || [];
+        if (!hits.length) return "";
+        const r2 = await fetch("https://fr.wikipedia.org/api/rest_v1/page/summary/" + encodeURIComponent(hits[0].title.replace(/ /g, "_")));
+        if (!r2.ok) return "";
+        const j2 = await r2.json();
+        return (j2.extract || "").trim();
+      } catch(e) { return ""; }
+    };
+    const frDesc = (desc ? await trFr(desc) : "") || await wikiFr();
+    if (frDesc) result.description = frDesc;
+  }
+
   seriesMetaCache.set(key, result);
   return result;
 }
